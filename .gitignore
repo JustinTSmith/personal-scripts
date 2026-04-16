@@ -33,7 +33,6 @@ voice-finetune/
 dan-realtime/
 anteage-crawler/
 chatgpt_importer/
-gmail-automation/
 
 # Node
 node_modules/
