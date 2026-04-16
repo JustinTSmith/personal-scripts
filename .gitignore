@@ -1,9 +1,42 @@
-.env
-.envrc
+# Python
 .venv/
 venv/
 __pycache__/
 *.pyc
-*.log
+*.pyo
 *.db
+*.egg-info/
+
+# Secrets / credentials
+.env
+.envrc
+*_token.json
+*credentials*.json
+*_secret*
+
+# Logs and runtime output
+*.log
+logs/
+output/
+audio_cache/
+
+# Cron run history (runtime state, not config)
+cron/runs/
+
+# Large embedded repos / submodules — excluded from backup
+Applio/
+Playwright/
+yt-dlp/
+qwen-voice/
+qwen3-tts/
+voice-finetune/
+dan-realtime/
+anteage-crawler/
+chatgpt_importer/
+gmail-automation/
+
+# Node
+node_modules/
+
+# macOS
 .DS_Store

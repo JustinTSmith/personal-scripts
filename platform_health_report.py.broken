@@ -1,0 +1,47 @@
+import os
+import shutil
+import logging
+from datetime import datetime
+
+# Configure logging
+logging.basicConfig(filename='/tmp/openclaw/platform_health.log', level=logging.INFO)
+
+def monitor_logs(log_dir):
+    # Check for missing logs and regenerate if necessary
+    for log_file in os.listdir(log_dir):
+        log_path = os.path.join(log_dir, log_file)
+        if not os.path.exists(log_path):
+            logging.warning(f'Regenerating log: {log_file}')
+            # Simulate log regeneration
+            with open(log_path, 'w') as f:
+                f.write('Log generated on ' + str(datetime.now()) + '
+')
+
+def backup_logs(log_dir, backup_dir):
+    # Create a backup of the logs
+    if not os.path.exists(backup_dir):
+        os.makedirs(backup_dir)
+    for log_file in os.listdir(log_dir):
+        source = os.path.join(log_dir, log_file)
+        destination = os.path.join(backup_dir, log_file)
+        shutil.copy2(source, destination)
+        logging.info(f'Backed up {log_file} to {backup_dir}')
+
+def write_documentation(doc_path):
+    # Create documentation if missing
+    if not os.path.exists(doc_path):
+        with open(doc_path, 'w') as doc:
+            doc.write('# Platform Health Report Documentation
+This file contains information about the platform health check process.
+')
+        logging.info(f'Created documentation file at {doc_path}')
+
+if __name__ == '__main__':
+    log_directory = os.path.expanduser('~/.openclaw/logs/')
+    backup_directory = '/tmp/openclaw/'
+    documentation_path = os.path.expanduser('~/Workspace/scripts/platform_health_report.md')
+
+    monitor_logs(log_directory)
+    backup_logs(log_directory, backup_directory)
+    write_documentation(documentation_path)
+    logging.info('Nightly health check complete.')

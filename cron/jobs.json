@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "103d98e0-83eb-4572-9edc-a258b4e2fa10",
+      "agentId": "main",
+      "name": "obsidian-index",
+      "description": "Reindex Obsidian vault into Qdrant",
+      "enabled": true,
+      "createdAtMs": 1773697366196,
+      "updatedAtMs": 1774249200025,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 0 * * *"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "systemEvent",
+        "text": "obsidian-indexer"
+      },
+      "state": {
+        "nextRunAtMs": 1774335600000,
+        "lastRunAtMs": 1774249200023,
+        "lastRunStatus": "skipped",
+        "lastStatus": "skipped",
+        "lastDurationMs": 2,
+        "lastDeliveryStatus": "not-requested",
+        "consecutiveErrors": 0,
+        "lastError": "disabled"
+      }
+    },
+    {
+      "id": "9d5380a7-3eb9-4f16-83a8-45a20decfdb6",
+      "agentId": "main",
+      "name": "model-usage-weekly",
+      "description": "Weekly model usage + spend summary",
+      "enabled": true,
+      "createdAtMs": 1773709722956,
+      "updatedAtMs": 1774281600013,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * 1"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "systemEvent",
+        "text": "model-usage-weekly"
+      },
+      "state": {
+        "nextRunAtMs": 1774886400000,
+        "lastRunAtMs": 1774281600011,
+        "lastRunStatus": "skipped",
+        "lastStatus": "skipped",
+        "lastDurationMs": 2,
+        "lastError": "disabled",
+        "lastDeliveryStatus": "not-requested",
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "id": "d82ec4af-6016-4eb8-ac67-13ec9a367681",
+      "agentId": "main",
+      "name": "gmail-weekly-digest",
+      "description": "Weekly newsletter digest",
+      "enabled": true,
+      "createdAtMs": 1773879534194,
+      "updatedAtMs": 1774234800013,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 20 * * 0"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "systemEvent",
+        "text": "gmail-weekly-digest"
+      },
+      "state": {
+        "nextRunAtMs": 1774839600000,
+        "lastRunAtMs": 1774234800011,
+        "lastRunStatus": "skipped",
+        "lastStatus": "skipped",
+        "lastDurationMs": 2,
+        "lastError": "disabled",
+        "lastDeliveryStatus": "not-requested",
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "id": "f1b0e273-ef75-40f8-ae24-99ec622d74f1",
+      "agentId": "main",
+      "sessionKey": "agent:main:main",
+      "name": "imessage-relationships-monthly",
+      "enabled": true,
+      "createdAtMs": 1773962813759,
+      "updatedAtMs": 1774005801489,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 3 1 * *",
+        "tz": "America/Los_Angeles"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Run the iMessage relationships monthly pipeline now: execute ~/.openclaw/skills/imessage-relationships/scripts/run_monthly.sh and report any errors succinctly.",
+        "model": "openai-codex/gpt-5.1-mini",
+        "thinking": "off",
+        "timeoutSeconds": 1800
+      },
+      "delivery": {
+        "mode": "silent"
+      },
+      "state": {
+        "nextRunAtMs": 1775037600000
+      }
+    },
+    {
+      "id": "0c07f5d8-e6b3-417f-94fb-613454dc9dec",
+      "name": "Dropbox–Drive dedupe",
+      "enabled": true,
+      "createdAtMs": 1774015598793,
+      "updatedAtMs": 1774227559185,
+      "schedule": {
+        "kind": "every",
+        "everyMs": 604800000,
+        "anchorMs": 1774016746664
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Cross-reference all Dropbox files with all Google Drive files using Composio, but use only simple, safe matching that does NOT depend on Composio remote workbench. Treat Google Drive as canonical. For each Dropbox file that is a very likely duplicate of a Drive file based on filename (same or very similar) AND file size (identical or extremely close), treat it as a duplicate. Do NOT download or compare full content; skip anything ambiguous. Move only those high-confidence Dropbox duplicates into /cleanup, preserving some of their original structure (e.g. /cleanup/Personal/..., /cleanup/Career/...). Do not delete any files. After each run, summarize how many files were scanned and how many were moved, and include 5 example pairs of (Dropbox moved file, matching Drive file)."
+      },
+      "delivery": {
+        "mode": "silent"
+      },
+      "state": {
+        "nextRunAtMs": 1774832228234,
+        "lastRunAtMs": 1774227428234,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 130951,
+        "lastDeliveryStatus": "delivered",
+        "consecutiveErrors": 0,
+        "lastDelivered": true
+      }
+    },
+    {
+      "id": "b8d240d6-101e-4dcc-a442-571e1e3ea405",
+      "name": "Obsidian Voice Processor",
+      "description": "Transcribe, categorize, and route voice notes from Life OS/Inbox/Voice into Obsidian folders",
+      "enabled": true,
+      "createdAtMs": 1774022113720,
+      "updatedAtMs": 1774302086724,
+      "schedule": {
+        "kind": "every",
+        "everyMs": 600000,
+        "anchorMs": 1774022113720
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Run the script /Users/justinsmith/Workspace/scripts/obsidian_voice_processor.py to transcribe any audio files in /Users/justinsmith/Library/Mobile Documents/com~apple~CloudDocs/Main Vault/Life OS/Inbox/Voice using local Whisper, categorize each note via GPT-4o-mini, create a markdown file in the appropriate Life OS folder, append to capture.md, and delete the original audio. Skip if there are no audio files. Do not send any Telegram messages, notifications, or summaries regardless of outcome."
+      },
+      "delivery": {
+        "mode": "silent"
+      },
+      "state": {
+        "nextRunAtMs": 1774302680877,
+        "lastRunAtMs": 1774302080877,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 5847,
+        "lastDeliveryStatus": "delivered",
+        "consecutiveErrors": 0,
+        "lastDelivered": true
+      }
+    },
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Tasks → Apple Reminders",
+      "description": "Convert new Life OS task .md files into Apple Reminders",
+      "enabled": true,
+      "createdAtMs": 1774241800000,
+      "updatedAtMs": 1774302105892,
+      "schedule": {
+        "kind": "every",
+        "everyMs": 600000,
+        "anchorMs": 1774241800000
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Run the script /Users/justinsmith/Workspace/scripts/tasks_to_reminders.py to convert any new task .md files in Life OS/Tasks/ into Apple Reminders. Skip files already marked with reminder_created: true in their frontmatter.",
+        "timeoutSeconds": 60
+      },
+      "delivery": {
+        "mode": "error-only"
+      },
+      "state": {
+        "nextRunAtMs": 1774302697608,
+        "lastRunAtMs": 1774302097608,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 8284,
+        "lastDeliveryStatus": "delivered",
+        "consecutiveErrors": 0,
+        "lastDelivered": true
+      }
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Tasks Weekly Archive",
+      "description": "Archive processed task files into Tasks/archive/YYYY-WNN/ every Sunday",
+      "enabled": true,
+      "createdAtMs": 1774241800000,
+      "updatedAtMs": 1774241800000,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 21 * * 0",
+        "tz": "America/Los_Angeles"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Run: python3 /Users/justinsmith/Workspace/scripts/tasks_to_reminders.py archive — this moves all processed task .md files (reminder_created: true) into the Life OS/Tasks/archive/YYYY-WNN/ folder for the current week.",
+        "timeoutSeconds": 60
+      },
+      "delivery": {
+        "mode": "error-only"
+      },
+      "state": {
+        "nextRunAtMs": 1774843200000
+      }
+    }
+  ]
+}

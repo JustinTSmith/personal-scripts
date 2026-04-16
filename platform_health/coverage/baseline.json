@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-04-15T21:15:43.189167",
+  "agents": {
+    "total": 9,
+    "required": 4,
+    "with_system": 4,
+    "pct": 100.0
+  },
+  "skills": {
+    "total": 33,
+    "with_skill_md": 33,
+    "pct": 100.0
+  },
+  "crons": {
+    "total": 95,
+    "success": 61,
+    "failed": 21,
+    "pct": 64.2
+  },
+  "docs": {
+    "total": 6,
+    "present": 6,
+    "pct": 100.0
+  }
+}
