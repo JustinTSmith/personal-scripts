@@ -31,7 +31,7 @@ snapshot_system_config() {
     for skill_dir in ~/.claude/skills/*/; do
         skill_name=$(basename "$skill_dir")
         if [ ! -d "$skill_dir/.git" ] && [ "$skill_name" != "_library" ]; then
-            rsync -a --delete "$skill_dir" "$dest/claude-skills/$skill_name/" 2>/dev/null || true
+            rsync -a --delete --exclude='.git' --exclude='*/.git' "$skill_dir" "$dest/claude-skills/$skill_name/" 2>/dev/null || true
         fi
     done
 
