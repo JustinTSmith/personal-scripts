@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Security Council report formatting.
 Groups findings by severity (critical → high → medium → low).

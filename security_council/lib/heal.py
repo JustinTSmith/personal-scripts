@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Security Council — heal actions.
 Auto-executable: chmod 600, gitignore append.

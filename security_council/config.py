@@ -32,7 +32,7 @@ ENV_SCAN_DIRS = [OPENCLAW_DIR, WORKSPACE_DIR]
 GITIGNORE_REQUIRED = [".env", "credentials/", "logs/", "exec-approvals.json"]
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
-SECURITY_COUNCIL_CHAT_ID = "-5162515702"
+SECURITY_COUNCIL_CHAT_ID = "-5170780877"
 TELEGRAM_MSG_LIMIT = 4000
 
 # ── Logging ───────────────────────────────────────────────────────────────────

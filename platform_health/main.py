@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Platform Health Report — main orchestrator.
 

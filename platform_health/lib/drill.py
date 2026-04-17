@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Drill state: persist numbered digest items so the OpenClaw agent can look up
 full context when Justin replies with a number or "fix N" in Telegram.

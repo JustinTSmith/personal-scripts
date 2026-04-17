@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Drill state persistence for Security Council.
 Separate state file from platform_health.

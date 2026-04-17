@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Report formatting: builds the numbered digest Telegram message from check results.
 

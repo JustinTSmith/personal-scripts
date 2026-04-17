@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 AI-powered security analysis using Anthropic API.
 Sends collected evidence to Claude for analysis from 4 perspectives:
