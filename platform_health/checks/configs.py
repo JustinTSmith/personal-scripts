@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Config file health checks:
 - Workspace docs existence and non-emptiness (AGENTS.md, SOUL.md, USER.md, etc.)

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Cron health checks:
 - Query ~/.openclaw/tasks/runs.sqlite for recent task execution history

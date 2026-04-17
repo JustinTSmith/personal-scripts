@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Secrets scanner: .env permissions, config secrets, env vars, git history.
 """

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Log anomaly detection: auth failures, injection attempts, error spikes, MCP disconnects.
 """

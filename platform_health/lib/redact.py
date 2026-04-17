@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Security hardening: redact tokens, API keys, and secrets from report text
 before sending to Telegram. All check output must pass through redact() before

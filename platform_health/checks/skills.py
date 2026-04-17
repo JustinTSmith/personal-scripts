@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Skills health checks:
 - Iterate all skills directories

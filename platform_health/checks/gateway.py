@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Gateway checks:
 - LaunchAgent status for all CRITICAL_LAUNCHAGENTS via launchctl list

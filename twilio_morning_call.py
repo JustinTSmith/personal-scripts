@@ -494,6 +494,55 @@ def build_briefing_text() -> str:
     return _rewrite_as_dan(raw)
 
 
+# ── Polly fallback call (no local TTS server required) ───────────────────────
+def _polly_call(spoken_text: str) -> None:
+    """
+    Place a Twilio call using inline TwiML <Say voice="Polly.Matthew">.
+    Used when the local Qwen3 TTS server is unavailable.
+    No HTTP server or Cloudflare tunnel needed.
+    """
+    import xml.sax.saxutils as _sax
+    import re as _re
+
+    if not validate_credentials():
+        log.error("Polly fallback: invalid Twilio credentials. Aborting.")
+        return
+
+    try:
+        from twilio.rest import Client
+    except ImportError:
+        log.error("twilio not installed. Run: pip3 install twilio")
+        return
+
+    # Strip to clean spoken text, cap at ~4000 chars (TwiML limit)
+    clean = _clean_for_speech(spoken_text)
+    clean = _re.sub(r'\s+', ' ', clean).strip()[:4000]
+    escaped = _sax.escape(clean)
+
+    twiml = (
+        '<Response>'
+        '<Say voice="Polly.Matthew" language="en-US">'
+        f'{escaped}'
+        '</Say>'
+        '</Response>'
+    )
+
+    client = Client(ACCOUNT_SID, AUTH_TOKEN)
+    try:
+        call = client.calls.create(twiml=twiml, to=TO_NUMBER, from_=FROM_NUMBER)
+        log.info("Polly fallback call placed. SID: %s  Status: %s", call.sid, call.status)
+        # Poll briefly so the log shows final status
+        for _ in range(90):
+            time.sleep(2)
+            updated = client.calls(call.sid).fetch()
+            log.info("Call status: %s", updated.status)
+            if updated.status in ("completed", "failed", "busy", "no-answer", "canceled"):
+                log.info("Polly call ended: %s", updated.status)
+                break
+    except Exception as e:
+        log.error("Polly fallback call failed: %s", e)
+
+
 # ── Qwen TTS ──────────────────────────────────────────────────────────────────
 def _tts_chunk(text: str) -> bytes:
     """Call Qwen TTS for a single chunk of text. Returns WAV bytes."""
@@ -867,8 +916,8 @@ def main():
         spoken_text = build_briefing_text()
         log.info("--- Briefing ---\n%s", spoken_text)
         if not generate_audio(spoken_text, _cache_dir / "briefing.wav"):
-            log.error("Briefing audio generation failed.")
-            sys.exit(1)
+            log.warning("Qwen TTS unavailable during pre-generation — cache not built. Will use Polly fallback at call time.")
+            return
         log.info("Generating question + outro audio...")
         for i, q in enumerate(QUESTIONS):
             (_cache_dir / f"q{i}.wav").write_bytes(_tts_chunk(q))
@@ -892,8 +941,12 @@ def main():
         _audio_dir = Path(tempfile.mkdtemp(prefix="morning_call_"))
         log.info("Audio dir: %s", _audio_dir)
         if not generate_audio(spoken_text, _audio_dir / "briefing.wav"):
-            log.error("Briefing audio generation failed. Aborting.")
-            sys.exit(1)
+            log.warning("Qwen TTS unavailable — falling back to Polly <Say> call.")
+            if not DRY_RUN:
+                _polly_call(spoken_text)
+            else:
+                log.info("DRY_RUN — would have placed Polly fallback call.")
+            return
         log.info("Generating question audio (%d questions)...", len(QUESTIONS))
         for i, q in enumerate(QUESTIONS):
             q_path = _audio_dir / f"q{i}.wav"

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Coverage baseline:
 - Generate / update a JSON coverage report tracking platform health metrics

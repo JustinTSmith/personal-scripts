@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Central path and constant definitions for platform_health.
 All checks import from here — no hardcoded paths elsewhere.

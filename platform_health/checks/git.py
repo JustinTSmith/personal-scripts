@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Git health checks:
 - ~/.openclaw repo: dirty working tree, ahead/behind remote, last commit age

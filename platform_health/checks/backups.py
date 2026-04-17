@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Backup health checks:
 - SQLite DB freshness (flows/registry.sqlite, tasks/runs.sqlite)

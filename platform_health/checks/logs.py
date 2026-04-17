@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Log analysis checks:
 - Scan last N lines of gateway.log and gateway.err.log for error patterns

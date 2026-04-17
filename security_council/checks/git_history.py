@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Git history analysis: recent security-relevant commits and gitignore integrity.
 """

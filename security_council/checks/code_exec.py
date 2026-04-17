@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Code execution scanner: finds exec/eval/subprocess patterns in skills and workspace.
 """

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Permissions audit: LaunchAgent privileges, agent tool ACLs, MCP auth, file permissions.
 """

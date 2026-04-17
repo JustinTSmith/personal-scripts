@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Config audit: openclaw.json structure, duplicate keys, gateway auth, MCP config.
 """
