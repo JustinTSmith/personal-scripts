@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-17T12:36:18.766342",
+  "generated_at": "2026-04-18T04:00:10.851404",
   "agents": {
     "total": 9,
     "required": 4,
@@ -12,10 +12,10 @@
     "pct": 100.0
   },
   "crons": {
-    "total": 67,
-    "success": 38,
-    "failed": 24,
-    "pct": 56.7
+    "total": 107,
+    "success": 33,
+    "failed": 69,
+    "pct": 30.8
   },
   "docs": {
     "total": 6,
