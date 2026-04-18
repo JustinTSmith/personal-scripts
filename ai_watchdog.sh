@@ -1,27 +1,35 @@
 #!/bin/bash
-# ai_watchdog.sh — checks critical services and restarts them if down
-# Runs every 2 minutes via com.justinsmith.ai-watchdog LaunchAgent
-
+# ai_watchdog.sh — checks critical services; generous timeout to avoid killing mid-warmup
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-
 USER_ID=$(id -u)
 
-# 1. Check if Ollama is running
-if ! curl -s --max-time 5 http://localhost:11434/api/tags > /dev/null 2>&1; then
-    echo "$(date): Ollama is down. Restarting via launchctl..."
+check() {  # args: url, name
+    local url="$1" name="$2"
+    for i in 1 2 3; do
+        if curl -sf --max-time 15 "$url" > /dev/null 2>&1; then
+            return 0
+        fi
+        sleep 5
+    done
+    return 1
+}
+
+# 1. Ollama
+check "http://localhost:11434/api/tags" "Ollama" || {
+    echo "$(date): Ollama down. Restarting..."
     launchctl kickstart -k gui/${USER_ID}/com.ollama.ollama 2>/dev/null || brew services restart ollama
-fi
+}
 
-# 2. Check if Qdrant is running (native binary, managed by launchd)
-if ! curl -s --max-time 5 http://localhost:6333/healthz > /dev/null 2>&1; then
-    echo "$(date): Qdrant is down. Restarting via launchctl..."
+# 2. Qdrant
+check "http://localhost:6333/healthz" "Qdrant" || {
+    echo "$(date): Qdrant down. Restarting..."
     launchctl kickstart -k gui/${USER_ID}/com.justinos.qdrant 2>/dev/null
-fi
+}
 
-# 3. Check if OpenClaw gateway is running
-if ! curl -s --max-time 5 http://localhost:18789/health > /dev/null 2>&1; then
-    echo "$(date): OpenClaw gateway is down. Restarting via launchctl..."
+# 3. OpenClaw gateway — now with 45s cumulative grace (3x15s retries)
+check "http://localhost:18789/health" "OpenClaw gateway" || {
+    echo "$(date): Gateway down after 45s retries. Restarting..."
     launchctl kickstart -k gui/${USER_ID}/ai.openclaw.gateway 2>/dev/null
-fi
+}
 
 echo "$(date): Watchdog check complete."
