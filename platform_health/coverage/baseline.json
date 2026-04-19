@@ -1,10 +1,9 @@
 {
-  "generated_at": "2026-04-18T04:00:10.851404",
+  "generated_at": "2026-04-19T04:00:00.731167",
   "agents": {
-    "total": 9,
-    "required": 4,
-    "with_system": 4,
-    "pct": 100.0
+    "total": 0,
+    "with_system": 0,
+    "pct": 0.0
   },
   "skills": {
     "total": 38,
@@ -12,14 +11,14 @@
     "pct": 100.0
   },
   "crons": {
-    "total": 107,
-    "success": 33,
-    "failed": 69,
-    "pct": 30.8
+    "total": 0,
+    "success": 0,
+    "failed": 0,
+    "pct": null
   },
   "docs": {
     "total": 6,
-    "present": 6,
-    "pct": 100.0
+    "present": 0,
+    "pct": 0.0
   }
 }
