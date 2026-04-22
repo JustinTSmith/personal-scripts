@@ -1,7 +1,8 @@
 {
-  "generated_at": "2026-04-21T04:00:00.871467",
+  "generated_at": "2026-04-22T04:00:00.470343",
   "agents": {
-    "total": 0,
+    "total": 1,
+    "required": 4,
     "with_system": 0,
     "pct": 0.0
   },
@@ -18,7 +19,7 @@
   },
   "docs": {
     "total": 6,
-    "present": 0,
-    "pct": 0.0
+    "present": 5,
+    "pct": 83.3
   }
 }
