@@ -54,7 +54,7 @@ CRITICAL_LAUNCHAGENTS = [
 
 # ── Gmail automation ──────────────────────────────────────────────────────────
 GMAIL_AUTOMATION_DIR  = SCRIPTS_DIR / "gmail-automation"
-GMAIL_LOG             = GMAIL_AUTOMATION_DIR / "gmail-automation.log"
+GMAIL_LOG             = GMAIL_AUTOMATION_DIR / "logs" / "automation.log"
 GMAIL_ERR_LOG         = GMAIL_AUTOMATION_DIR / "gmail-automation-error.log"
 GMAIL_STALE_HOURS     = 4  # alert if log hasn't been written in this many hours
 
