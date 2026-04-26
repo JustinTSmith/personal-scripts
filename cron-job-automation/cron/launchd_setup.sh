@@ -1,221 +1,276 @@
 #!/usr/bin/env bash
 # ============================================================
-# launchd_setup.sh — Install/remove macOS LaunchAgent plists
-# for local cron jobs that need access to local resources.
+# launchd_setup.sh — Install all OpenClaw cron jobs as macOS
+# LaunchAgents. 100% local — zero Anthropic/cloud dependency.
 #
 # Usage:
-#   ./launchd_setup.sh install   # Write plists + load agents
-#   ./launchd_setup.sh remove    # Unload + remove plists
-#   ./launchd_setup.sh status    # Show agent status
+#   ./launchd_setup.sh install   # Write plists + load all agents
+#   ./launchd_setup.sh remove    # Unload + remove all plists
+#   ./launchd_setup.sh status    # Print agent status table
+#   ./launchd_setup.sh run <job> # Run one job right now (fire & wait)
 #
-# These jobs run locally (access Obsidian, Apple Reminders, etc.)
-# High-frequency jobs that can't use remote CCR triggers.
+# Logs: ~/Library/Logs/openclaw-cron/<job>.{log,err}
 # ============================================================
 set -euo pipefail
 
-LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
-SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CRON_DIR="${SCRIPTS_DIR}/cron"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+AGENTS_DIR="$HOME/Library/LaunchAgents"
 LOG_DIR="$HOME/Library/Logs/openclaw-cron"
+PYTHON="$(command -v python3)"
 
-mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_DIR"
+mkdir -p "$AGENTS_DIR" "$LOG_DIR"
 
-# ── Plist generator ──────────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
-write_plist() {
-    local label="$1"
-    local interval_secs="$2"    # StartInterval (seconds)
-    local script="$3"
-    local log_name="${label//./-}"
+label_to_plist() { echo "${AGENTS_DIR}/${1}.plist"; }
 
-    cat > "${LAUNCH_AGENTS_DIR}/${label}.plist" <<EOF
+# write_interval_plist <label> <interval_secs> <interval_flag> <timeout_secs> <command...>
+write_interval_plist() {
+    local label="$1" interval="$2" flag="$3" timeout="$4"
+    shift 4
+    local log="${LOG_DIR}/${label}"
+    local -a cmd_args=()
+    for arg in "$@"; do
+        cmd_args+=("        <string>${arg}</string>")
+    done
+
+    cat > "$(label_to_plist "$label")" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>${label}</string>
+    <key>Label</key>           <string>${label}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${CRON_DIR}/run_job.sh</string>
+        <string>${SCRIPT_DIR}/run_job.sh</string>
         <string>${label}</string>
-        <string>--interval</string>
-        <string>${4:-}</string>
-        <string>--timeout</string>
-        <string>${5:-120}</string>
-        <string>--no-notify</string>
+        <string>--interval</string>  <string>${flag}</string>
+        <string>--timeout</string>   <string>${timeout}</string>
         <string>--</string>
-        <string>/usr/bin/python3</string>
-        <string>${script}</string>
+$(printf '%s\n' "${cmd_args[@]}")
     </array>
-    <key>StartInterval</key>
-    <integer>${interval_secs}</integer>
-    <key>RunAtLoad</key>
-    <false/>
-    <key>StandardOutPath</key>
-    <string>${LOG_DIR}/${log_name}.log</string>
-    <key>StandardErrorPath</key>
-    <string>${LOG_DIR}/${log_name}.err</string>
+    <key>StartInterval</key>   <integer>${interval}</integer>
+    <key>RunAtLoad</key>       <false/>
+    <key>StandardOutPath</key> <string>${log}.log</string>
+    <key>StandardErrorPath</key><string>${log}.err</string>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-        <key>HOME</key>
-        <string>${HOME}</string>
+        <key>PATH</key>  <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>  <string>${HOME}</string>
+        <key>CRON_LOG_DB</key><string>${HOME}/.openclaw/cron_log.db</string>
     </dict>
-    <key>WorkingDirectory</key>
-    <string>${SCRIPTS_DIR}</string>
+    <key>WorkingDirectory</key><string>${REPO_DIR}</string>
 </dict>
 </plist>
-EOF
+PLIST
 }
 
+# write_calendar_plist <label> <flag> <timeout_secs> <cal_xml> <command...>
+# cal_xml: the StartCalendarInterval dict contents as a string
 write_calendar_plist() {
-    local label="$1"
-    local minute="$2"
-    local hour="$3"
-    local weekday="$4"   # empty = daily, 0-6 = weekly
-    local script="$5"
-    local log_name="${label//./-}"
+    local label="$1" flag="$2" timeout="$3" cal_xml="$4"
+    shift 4
+    local log="${LOG_DIR}/${label}"
+    local -a cmd_args=()
+    for arg in "$@"; do
+        cmd_args+=("        <string>${arg}</string>")
+    done
 
-    local weekday_xml=""
-    if [[ -n "$weekday" ]]; then
-        weekday_xml="<key>Weekday</key><integer>${weekday}</integer>"
-    fi
-
-    cat > "${LAUNCH_AGENTS_DIR}/${label}.plist" <<EOF
+    cat > "$(label_to_plist "$label")" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>${label}</string>
+    <key>Label</key>           <string>${label}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${CRON_DIR}/run_job.sh</string>
+        <string>${SCRIPT_DIR}/run_job.sh</string>
         <string>${label}</string>
-        <string>--interval</string>
-        <string>daily</string>
-        <string>--timeout</string>
-        <string>600</string>
+        <string>--interval</string>  <string>${flag}</string>
+        <string>--timeout</string>   <string>${timeout}</string>
         <string>--</string>
-        <string>/usr/bin/python3</string>
-        <string>${script}</string>
+$(printf '%s\n' "${cmd_args[@]}")
     </array>
     <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key><integer>${hour}</integer>
-        <key>Minute</key><integer>${minute}</integer>
-        ${weekday_xml}
-    </dict>
-    <key>RunAtLoad</key>
-    <false/>
-    <key>StandardOutPath</key>
-    <string>${LOG_DIR}/${log_name}.log</string>
-    <key>StandardErrorPath</key>
-    <string>${LOG_DIR}/${log_name}.err</string>
+    ${cal_xml}
+    <key>RunAtLoad</key>       <false/>
+    <key>StandardOutPath</key> <string>${log}.log</string>
+    <key>StandardErrorPath</key><string>${log}.err</string>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-        <key>HOME</key>
-        <string>${HOME}</string>
+        <key>PATH</key>  <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>  <string>${HOME}</string>
+        <key>CRON_LOG_DB</key><string>${HOME}/.openclaw/cron_log.db</string>
     </dict>
-    <key>WorkingDirectory</key>
-    <string>${SCRIPTS_DIR}</string>
+    <key>WorkingDirectory</key><string>${REPO_DIR}</string>
 </dict>
 </plist>
-EOF
+PLIST
 }
 
-# ── Job definitions ──────────────────────────────────────────────────────────
+# ── Load / unload helpers ─────────────────────────────────────────────────────
 
-JOBS=(
-    # label | interval_secs | script | interval_flag | timeout
-    "com.openclaw.obsidian-voice-processor|600|${SCRIPTS_DIR}/obsidian_voice_processor.py|10m|120"
-    "com.openclaw.tasks-to-reminders|600|${SCRIPTS_DIR}/tasks_to_reminders.py|10m|60"
-    "com.openclaw.cron-health-check|1800|${CRON_DIR}/health_check.py|30m|60"
+load_plist() {
+    local label="$1"
+    local plist; plist="$(label_to_plist "$label")"
+    # Unload first (ignore errors) then reload
+    launchctl unload "$plist" 2>/dev/null || true
+    launchctl load -w "$plist"
+}
+
+unload_plist() {
+    local label="$1"
+    local plist; plist="$(label_to_plist "$label")"
+    [[ -f "$plist" ]] && launchctl unload -w "$plist" 2>/dev/null || true
+}
+
+# ── Job definitions ───────────────────────────────────────────────────────────
+# All labels must match job names used in run_job.sh / cron_log.py
+
+define_jobs() {
+    # ── Every 10 min ─────────────────────────────────────────────────────────
+    write_interval_plist \
+        "com.openclaw.obsidian-voice-processor" 600 "10m" 120 \
+        "$PYTHON" "${REPO_DIR}/obsidian_voice_processor.py"
+
+    write_interval_plist \
+        "com.openclaw.tasks-to-reminders" 600 "10m" 60 \
+        "$PYTHON" "${REPO_DIR}/tasks_to_reminders.py"
+
+    # ── Every 30 min (health check) ───────────────────────────────────────────
+    write_interval_plist \
+        "com.openclaw.cron-health-check" 1800 "30m" 60 \
+        "$PYTHON" "${SCRIPT_DIR}/health_check.py"
+
+    # ── Daily midnight — Obsidian → Qdrant reindex ───────────────────────────
+    write_calendar_plist \
+        "com.openclaw.obsidian-index" "daily" 600 \
+        "<dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>" \
+        "$PYTHON" "${REPO_DIR}/qdrant_indexer.py"
+
+    # ── Monday 9am — model usage weekly report ────────────────────────────────
+    write_calendar_plist \
+        "com.openclaw.model-usage-weekly" "daily" 120 \
+        "<dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>" \
+        "$PYTHON" "${REPO_DIR}/benchmark.py"
+
+    # ── Sunday 8pm — Gmail weekly digest ─────────────────────────────────────
+    write_calendar_plist \
+        "com.openclaw.gmail-weekly-digest" "daily" 300 \
+        "<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>" \
+        "$PYTHON" "${REPO_DIR}/gmail-automation/main.py"
+
+    # ── 1st of month 3am — iMessage relationship analysis ────────────────────
+    write_calendar_plist \
+        "com.openclaw.imessage-relationships-monthly" "daily" 600 \
+        "<dict><key>Day</key><integer>1</integer><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>" \
+        "$PYTHON" "${REPO_DIR}/crm-followup/followup.py"
+
+    # ── Sunday 2am — Dropbox/Drive dedupe ────────────────────────────────────
+    write_calendar_plist \
+        "com.openclaw.dropbox-drive-dedupe" "daily" 900 \
+        "<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>2</integer><key>Minute</key><integer>0</integer></dict>" \
+        "$PYTHON" "${REPO_DIR}/cloud_storage_cleanup_script.py"
+
+    # ── Sunday 9pm — weekly task archive ─────────────────────────────────────
+    write_calendar_plist \
+        "com.openclaw.tasks-weekly-archive" "daily" 120 \
+        "<dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>" \
+        "$PYTHON" "${REPO_DIR}/tasks_to_reminders.py"
+}
+
+ALL_LABELS=(
+    com.openclaw.obsidian-voice-processor
+    com.openclaw.tasks-to-reminders
+    com.openclaw.cron-health-check
+    com.openclaw.obsidian-index
+    com.openclaw.model-usage-weekly
+    com.openclaw.gmail-weekly-digest
+    com.openclaw.imessage-relationships-monthly
+    com.openclaw.dropbox-drive-dedupe
+    com.openclaw.tasks-weekly-archive
 )
 
-CALENDAR_JOBS=(
-    # label | minute | hour | weekday | script
-    "com.openclaw.obsidian-index|0|0||${SCRIPTS_DIR}/qdrant_indexer.py"
-    "com.openclaw.tasks-weekly-archive|0|21|0|${SCRIPTS_DIR}/tasks_to_reminders.py"
-)
-
-# ── Install ──────────────────────────────────────────────────────────────────
+# ── Commands ──────────────────────────────────────────────────────────────────
 
 do_install() {
-    echo "Installing LaunchAgent plists to $LAUNCH_AGENTS_DIR ..."
+    echo "Checking dependencies ..."
+    "$PYTHON" -c "import requests" 2>/dev/null || {
+        echo "  Installing requests ..."
+        "$PYTHON" -m pip install --quiet requests
+    }
+    echo "  ✅ requests"
 
-    for entry in "${JOBS[@]}"; do
-        IFS='|' read -r label interval script interval_flag timeout <<< "$entry"
-        write_plist "$label" "$interval" "$script" "$interval_flag" "$timeout"
-        launchctl load -w "${LAUNCH_AGENTS_DIR}/${label}.plist" 2>/dev/null || \
-            launchctl unload "${LAUNCH_AGENTS_DIR}/${label}.plist" 2>/dev/null && \
-            launchctl load -w "${LAUNCH_AGENTS_DIR}/${label}.plist"
-        echo "  ✅ $label (every ${interval}s)"
-    done
+    echo ""
+    echo "Writing LaunchAgent plists → $AGENTS_DIR"
+    define_jobs
 
-    for entry in "${CALENDAR_JOBS[@]}"; do
-        IFS='|' read -r label minute hour weekday script <<< "$entry"
-        write_calendar_plist "$label" "$minute" "$hour" "$weekday" "$script"
-        launchctl load -w "${LAUNCH_AGENTS_DIR}/${label}.plist" 2>/dev/null || \
-            launchctl unload "${LAUNCH_AGENTS_DIR}/${label}.plist" 2>/dev/null && \
-            launchctl load -w "${LAUNCH_AGENTS_DIR}/${label}.plist"
-        echo "  ✅ $label (calendar)"
+    echo "Loading agents ..."
+    for label in "${ALL_LABELS[@]}"; do
+        load_plist "$label"
+        echo "  ✅ $label"
     done
 
     echo ""
-    echo "Logs: $LOG_DIR"
+    echo "Done. Logs: $LOG_DIR"
+    echo "Run './launchd_setup.sh status' to verify."
 }
-
-# ── Remove ───────────────────────────────────────────────────────────────────
 
 do_remove() {
-    echo "Removing LaunchAgent plists ..."
-    all_jobs=("${JOBS[@]}" "${CALENDAR_JOBS[@]}")
-    for entry in "${all_jobs[@]}"; do
-        label="$(echo "$entry" | cut -d'|' -f1)"
-        plist="${LAUNCH_AGENTS_DIR}/${label}.plist"
-        if [[ -f "$plist" ]]; then
-            launchctl unload -w "$plist" 2>/dev/null || true
-            rm -f "$plist"
-            echo "  🗑  $label removed"
-        fi
+    echo "Unloading and removing LaunchAgent plists ..."
+    for label in "${ALL_LABELS[@]}"; do
+        unload_plist "$label"
+        rm -f "$(label_to_plist "$label")"
+        echo "  🗑  $label"
     done
+    echo "Done."
 }
-
-# ── Status ───────────────────────────────────────────────────────────────────
 
 do_status() {
-    echo "LaunchAgent status:"
-    all_jobs=("${JOBS[@]}" "${CALENDAR_JOBS[@]}")
-    for entry in "${all_jobs[@]}"; do
-        label="$(echo "$entry" | cut -d'|' -f1)"
-        plist="${LAUNCH_AGENTS_DIR}/${label}.plist"
-        if [[ -f "$plist" ]]; then
-            pid=$(launchctl list "$label" 2>/dev/null | awk 'NR==1{print $1}')
-            status=$(launchctl list "$label" 2>/dev/null | awk 'NR==1{print $2}')
-            echo "  $label  PID=$pid  LastExit=$status"
-        else
-            echo "  $label  [not installed]"
+    printf "%-50s %-6s %-10s\n" "LABEL" "PID" "LAST_EXIT"
+    printf '%s\n' "$(printf '─%.0s' {1..70})"
+    for label in "${ALL_LABELS[@]}"; do
+        local plist; plist="$(label_to_plist "$label")"
+        if [[ ! -f "$plist" ]]; then
+            printf "%-50s %-6s %-10s\n" "$label" "-" "NOT INSTALLED"
+            continue
         fi
+        local info; info=$(launchctl list "$label" 2>/dev/null || echo "- - -")
+        local pid;  pid=$(echo "$info"  | awk 'NR==1{print $1}')
+        local exit; exit=$(echo "$info" | awk 'NR==1{print $2}')
+        printf "%-50s %-6s %-10s\n" "$label" "${pid:--}" "${exit:--}"
     done
     echo ""
-    echo "Recent logs in $LOG_DIR:"
-    ls -lht "$LOG_DIR" 2>/dev/null | head -10 || echo "  (no logs yet)"
+    echo "Logs: $LOG_DIR"
+    ls -lht "$LOG_DIR" 2>/dev/null | head -12 || echo "  (no logs yet)"
 }
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+do_run() {
+    local job="${1:?Usage: $0 run <job-label>}"
+    # Allow short name (e.g. "health-check") or full label
+    [[ "$job" != com.openclaw.* ]] && job="com.openclaw.${job}"
+    local plist; plist="$(label_to_plist "$job")"
+    [[ -f "$plist" ]] || { echo "Not installed: $job"; exit 1; }
+    echo "Running $job ..."
+    launchctl start "$job"
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 CMD="${1:-help}"
 case "$CMD" in
-    install) do_install ;;
-    remove)  do_remove  ;;
-    status)  do_status  ;;
+    install) do_install         ;;
+    remove)  do_remove          ;;
+    status)  do_status          ;;
+    run)     do_run "${2:-}"    ;;
     *)
-        echo "Usage: $0 install | remove | status"
+        echo "Usage: $0 install | remove | status | run <job>"
+        echo ""
+        echo "Jobs:"
+        for l in "${ALL_LABELS[@]}"; do echo "  $l"; done
         exit 1
         ;;
 esac
