@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-25T04:00:00.488967",
+  "generated_at": "2026-04-26T04:00:00.835004",
   "agents": {
     "total": 1,
     "required": 4,
@@ -7,8 +7,8 @@
     "pct": 0.0
   },
   "skills": {
-    "total": 38,
-    "with_skill_md": 38,
+    "total": 44,
+    "with_skill_md": 44,
     "pct": 100.0
   },
   "crons": {
@@ -19,7 +19,7 @@
   },
   "docs": {
     "total": 6,
-    "present": 5,
-    "pct": 83.3
+    "present": 6,
+    "pct": 100.0
   }
 }
