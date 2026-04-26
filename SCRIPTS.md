@@ -1,7 +1,7 @@
 # Scripts Manifest
 > Auto-maintained master list of all scripts in this directory.
 > Run `python3 _generate_manifest.py` to regenerate from current state.
-> Last updated: 2026-04-16
+> Last updated: 2026-04-26
 
 ---
 
@@ -46,13 +46,14 @@
 | `Applio/` | <h1 align="center"> | `python3 app.py` |
 | `Playwright/` | A minimal Playwright browser automation script. Currently a starter/test file. | `—` |
 | `anteage-crawler/` | A price monitoring scraper for anteage.com. Watches for significant price drops and sends email alerts. | `python3 crawler.py` |
+| `anteage-monitor/` | — | `python3 crawler.py` |
 | `audio_cache/` | — | `—` |
 | `chatgpt_importer/` | A script that converts a ChatGPT conversation export into organized, AI-synthesized Markdown notes in your Obsidian vaul | `—` |
 | `crm-followup/` | — | `—` |
 | `cron/` | — | `—` |
+| `cron-job-automation/` | — | `—` |
 | `dan-realtime/` | A real-time voice conversation interface powered by the OpenAI Realtime API. Speaks as "Dan" — a high-agency operator pe | `—` |
 | `gmail-automation/` | Version 3.0 – March 2026 | `python3 main.py` |
-| `output/` | — | `—` |
 | `platform_health/` | — | `python3 main.py` |
 | `qwen-voice/` | A push-to-talk voice assistant that runs entirely on local models. Hold Space to talk, release to get a spoken response. | `python3 voice_loop.py` |
 | `qwen3-tts/` | A local text-to-speech server that implements the OpenAI-compatible `/v1/audio/speech` API endpoint. Uses Qwen3-TTS with | `python3 server.py` |
