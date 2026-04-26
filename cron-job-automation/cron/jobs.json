@@ -1,0 +1,216 @@
+{
+  "version": "2",
+  "_comment": "OpenClaw cron job definitions. Each job is wrapped by run_job.sh for lockfile/logging/alerting.",
+  "jobs": [
+    {
+      "name": "obsidian-index",
+      "schedule": "0 0 * * *",
+      "description": "Reindex Obsidian vault into Qdrant vector store",
+      "enabled": true,
+      "command": [
+        "/Users/justinsmith/Workspace/scripts/cron-job-automation/cron/run_job.sh",
+        "obsidian-index",
+        "--interval", "daily",
+        "--timeout", "600",
+        "--",
+        "python3", "/Users/justinsmith/Workspace/scripts/cron-job-automation/qdrant_indexer.py"
+      ],
+      "payload": {
+        "cron_log": true,
+        "interval": "daily",
+        "timeout_secs": 600,
+        "notify_on": ["failure", "persistent_failure"],
+        "telegram_chat": "cron-updates",
+        "nerve_dashboard": true,
+        "prompt": "Run the Obsidian vault indexer. Use cron_log to record start (log-start obsidian-index), execute the indexer, then log-end with success/failure status and a brief summary of how many files were indexed. Send result to cron-updates Telegram group."
+      }
+    },
+    {
+      "name": "model-usage-weekly",
+      "schedule": "0 9 * * 1",
+      "description": "Weekly model usage and spend summary",
+      "enabled": true,
+      "command": [
+        "/Users/justinsmith/Workspace/scripts/cron-job-automation/cron/run_job.sh",
+        "model-usage-weekly",
+        "--interval", "daily",
+        "--timeout", "120",
+        "--",
+        "python3", "/Users/justinsmith/Workspace/scripts/cron-job-automation/benchmark.py"
+      ],
+      "payload": {
+        "cron_log": true,
+        "interval": "daily",
+        "timeout_secs": 120,
+        "notify_on": ["success", "failure"],
+        "telegram_chat": "cron-updates",
+        "nerve_dashboard": true,
+        "prompt": "Generate weekly model usage and spend summary. Log start, run the report, log end with status. Send the summary to cron-updates Telegram group."
+      }
+    },
+    {
+      "name": "gmail-weekly-digest",
+      "schedule": "0 20 * * 0",
+      "description": "Weekly email newsletter digest",
+      "enabled": true,
+      "command": [
+        "/Users/justinsmith/Workspace/scripts/cron-job-automation/cron/run_job.sh",
+        "gmail-weekly-digest",
+        "--interval", "daily",
+        "--timeout", "300",
+        "--",
+        "python3", "/Users/justinsmith/Workspace/scripts/cron-job-automation/gmail-automation/main.py"
+      ],
+      "payload": {
+        "cron_log": true,
+        "interval": "daily",
+        "timeout_secs": 300,
+        "notify_on": ["success", "failure"],
+        "telegram_chat": "cron-updates",
+        "nerve_dashboard": true,
+        "prompt": "Run the Gmail weekly digest automation. Log cron start, execute the digest generator, log end. Post a brief summary of emails processed to cron-updates Telegram group."
+      }
+    },
+    {
+      "name": "imessage-relationships-monthly",
+      "schedule": "0 3 1 * *",
+      "description": "Analyze iMessage conversations for relationship insights",
+      "enabled": true,
+      "command": [
+        "/Users/justinsmith/Workspace/scripts/cron-job-automation/cron/run_job.sh",
+        "imessage-relationships-monthly",
+        "--interval", "daily",
+        "--timeout", "600",
+        "--",
+        "python3", "/Users/justinsmith/Workspace/scripts/cron-job-automation/crm-followup/followup.py"
+      ],
+      "payload": {
+        "cron_log": true,
+        "interval": "daily",
+        "timeout_secs": 600,
+        "notify_on": ["success", "failure"],
+        "telegram_chat": "cron-updates",
+        "nerve_dashboard": true,
+        "prompt": "Run monthly iMessage relationship analysis. Log start, analyze conversations, log end with count of contacts reviewed. Send summary to cron-updates Telegram group."
+      }
+    },
+    {
+      "name": "dropbox-drive-dedupe",
+      "schedule": "0 2 * * 0",
+      "description": "Deduplicate files between Dropbox and Google Drive",
+      "enabled": true,
+      "command": [
+        "/Users/justinsmith/Workspace/scripts/cron-job-automation/cron/run_job.sh",
+        "dropbox-drive-dedupe",
+        "--interval", "daily",
+        "--timeout", "900",
+        "--",
+        "python3", "/Users/justinsmith/Workspace/scripts/cron-job-automation/cloud_storage_cleanup_script.py"
+      ],
+      "payload": {
+        "cron_log": true,
+        "interval": "daily",
+        "timeout_secs": 900,
+        "notify_on": ["success", "failure"],
+        "telegram_chat": "cron-updates",
+        "nerve_dashboard": true,
+        "prompt": "Run cloud storage deduplication. Log start, scan Dropbox/Drive for duplicates, log end with count of files processed/moved. Post result to cron-updates Telegram group."
+      }
+    },
+    {
+      "name": "obsidian-voice-processor",
+      "schedule": "*/10 * * * *",
+      "description": "Transcribe and categorize Obsidian voice notes",
+      "enabled": true,
+      "command": [
+        "/Users/justinsmith/Workspace/scripts/cron-job-automation/cron/run_job.sh",
+        "obsidian-voice-processor",
+        "--interval", "10m",
+        "--timeout", "120",
+        "--no-notify",
+        "--",
+        "python3", "/Users/justinsmith/Workspace/scripts/cron-job-automation/obsidian_voice_processor.py"
+      ],
+      "payload": {
+        "cron_log": true,
+        "interval": "10m",
+        "timeout_secs": 120,
+        "notify_on": ["failure", "persistent_failure"],
+        "telegram_chat": "cron-updates",
+        "nerve_dashboard": true,
+        "prompt": "Process any pending Obsidian voice notes. Log start, run voice processor (Whisper transcription + categorization), log end. Only notify Telegram on failure."
+      }
+    },
+    {
+      "name": "tasks-to-reminders",
+      "schedule": "*/10 * * * *",
+      "description": "Sync Life OS task .md files to Apple Reminders",
+      "enabled": true,
+      "command": [
+        "/Users/justinsmith/Workspace/scripts/cron-job-automation/cron/run_job.sh",
+        "tasks-to-reminders",
+        "--interval", "10m",
+        "--timeout", "60",
+        "--no-notify",
+        "--",
+        "python3", "/Users/justinsmith/Workspace/scripts/cron-job-automation/tasks_to_reminders.py"
+      ],
+      "payload": {
+        "cron_log": true,
+        "interval": "10m",
+        "timeout_secs": 60,
+        "notify_on": ["failure", "persistent_failure"],
+        "telegram_chat": "cron-updates",
+        "nerve_dashboard": true,
+        "prompt": "Sync task markdown files to Apple Reminders. Log start, run sync, log end with count of tasks synced. Only notify Telegram on failure."
+      }
+    },
+    {
+      "name": "tasks-weekly-archive",
+      "schedule": "0 21 * * 0",
+      "description": "Archive processed weekly tasks to YYYY-WNN folders",
+      "enabled": true,
+      "command": [
+        "/Users/justinsmith/Workspace/scripts/cron-job-automation/cron/run_job.sh",
+        "tasks-weekly-archive",
+        "--interval", "daily",
+        "--timeout", "120",
+        "--",
+        "echo", "tasks-weekly-archive: implement archiver script"
+      ],
+      "payload": {
+        "cron_log": true,
+        "interval": "daily",
+        "timeout_secs": 120,
+        "notify_on": ["success", "failure"],
+        "telegram_chat": "cron-updates",
+        "nerve_dashboard": true,
+        "prompt": "Archive this week's completed tasks into YYYY-WNN folder structure. Log start, run archive, log end with file count. Post summary to cron-updates Telegram group."
+      }
+    },
+    {
+      "name": "cron-health-check",
+      "schedule": "*/30 * * * *",
+      "description": "Health check: scan all jobs, alert on failures, sync to Nerve",
+      "enabled": true,
+      "command": [
+        "/Users/justinsmith/Workspace/scripts/cron-job-automation/cron/run_job.sh",
+        "cron-health-check",
+        "--interval", "30m",
+        "--timeout", "60",
+        "--no-notify",
+        "--",
+        "python3", "/Users/justinsmith/Workspace/scripts/cron-job-automation/cron/health_check.py"
+      ],
+      "payload": {
+        "cron_log": true,
+        "interval": "30m",
+        "timeout_secs": 60,
+        "notify_on": ["failure"],
+        "telegram_chat": "cron-updates",
+        "nerve_dashboard": true,
+        "prompt": "Run cron health check. Cleanup stale jobs, check all job statuses, send health digest to cron-updates Telegram group, sync state to Nerve dashboard at http://localhost:3080/"
+      }
+    }
+  ]
+}
