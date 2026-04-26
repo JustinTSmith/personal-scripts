@@ -60,6 +60,8 @@ $(printf '%s\n' "${cmd_args[@]}")
         <key>PATH</key>  <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>  <string>${HOME}</string>
         <key>CRON_LOG_DB</key><string>${HOME}/.openclaw/cron_log.db</string>
+        <key>TELEGRAM_BOT_TOKEN</key><string>${TELEGRAM_BOT_TOKEN}</string>
+        <key>CRON_UPDATES_CHAT_ID</key><string>${CRON_UPDATES_CHAT_ID}</string>
     </dict>
     <key>WorkingDirectory</key><string>${REPO_DIR}</string>
 </dict>
@@ -104,6 +106,8 @@ $(printf '%s\n' "${cmd_args[@]}")
         <key>PATH</key>  <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>  <string>${HOME}</string>
         <key>CRON_LOG_DB</key><string>${HOME}/.openclaw/cron_log.db</string>
+        <key>TELEGRAM_BOT_TOKEN</key><string>${TELEGRAM_BOT_TOKEN}</string>
+        <key>CRON_UPDATES_CHAT_ID</key><string>${CRON_UPDATES_CHAT_ID}</string>
     </dict>
     <key>WorkingDirectory</key><string>${REPO_DIR}</string>
 </dict>
@@ -197,6 +201,16 @@ ALL_LABELS=(
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 do_install() {
+    # Load env vars so they get baked into the plist EnvironmentVariables blocks
+    local env_file="$HOME/.config/ai/.env"
+    if [[ -f "$env_file" ]]; then
+        set -a
+        # shellcheck disable=SC1090
+        source "$env_file"
+        set +a
+        echo "Loaded env from $env_file"
+    fi
+
     echo "Checking dependencies ..."
     "$PYTHON" -c "import requests" 2>/dev/null || {
         echo "  Installing requests ..."
