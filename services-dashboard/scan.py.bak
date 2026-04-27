@@ -32,7 +32,7 @@ DASHBOARD_HTML = SCRIPT_DIR / "dashboard.html"
 EXPLANATION_CACHE = SCRIPT_DIR / "explanations.json"
 ENV_FILE = HOME / ".config" / "ai" / ".env"
 
-EXPLANATION_MODEL = "claude-sonnet-4-6"
+EXPLANATION_MODEL = "claude-haiku-4-5"  # cheap, fast, good enough for this
 EXPLANATION_SOURCE_MAX = 30_000  # bytes of source to send to the LLM
 EXPLANATION_MAX_TOKENS = 800
 
@@ -798,23 +798,17 @@ def generate_explanation(
     source: dict[str, Any],
     label: str,
     schedule_summary: str,
-    cache: dict[str, Any] | None = None,
-    description: str = "",
+    cache: dict[str, Any],
 ) -> str | None:
     """
     Returns a markdown explanation of how the script works. Uses cache keyed
-    by SHA-256 of (path + content). Calls Claude on cache miss.
-    When cache is None, loads from and saves to disk automatically.
+    by SHA-256 of (path + content). Calls Claude Haiku on cache miss.
     Returns None if the source is empty or the API call fails.
     """
     path = source.get("path")
     content = source.get("content") or ""
     if not path or not content.strip():
         return None
-
-    _own_cache = cache is None
-    if _own_cache:
-        cache = load_cache()
 
     key = _hash_source(path, content)
     if key in cache:
@@ -833,14 +827,12 @@ def generate_explanation(
         f"{len(content)}]" if len(content) > EXPLANATION_SOURCE_MAX else ""
     )
 
-    desc_line = f"\nContext: {description}" if description else ""
-
     prompt = f"""You are explaining a script to a developer browsing a services dashboard.
 
 The script runs as a macOS launchd service named **{label}**.
 Schedule: {schedule_summary or "—"}.
 Path: `{path}`
-Language: {source.get("language", "?")}{desc_line}
+Language: {source.get("language", "?")}
 
 Write a short, concrete explanation in markdown using exactly these sections:
 
@@ -880,8 +872,6 @@ Keep the entire response under 350 words. Be specific to this code, not generic.
             "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
             "model": EXPLANATION_MODEL,
         }
-        if _own_cache:
-            save_cache(cache)
         return text
     except Exception as e:  # noqa: BLE001
         print(f"  ! Claude call failed for {label}: {e}", file=sys.stderr)
@@ -998,26 +988,727 @@ def scan() -> dict[str, Any]:
 
 # ── HTML rendering ──────────────────────────────────────────────────────────
 
-TEMPLATE_FILE = SCRIPT_DIR / "template.html"
 
+HTML_TEMPLATE = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Services Dashboard — __HOST__</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161922;
+    --panel-2: #1d212c;
+    --border: #2a2f3d;
+    --text: #e7eaf0;
+    --muted: #8a93a6;
+    --accent: #6ea8fe;
+    --green: #4ade80;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --gray: #6b7280;
+    --blue: #3b82f6;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --panel-2: #f0f2f8;
+      --border: #dfe3ec;
+      --text: #1a1d24;
+      --muted: #6b7280;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+  header { padding: 20px 28px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  header .meta { color: var(--muted); font-size: 12px; }
+  header .stats { margin-left: auto; display: flex; gap: 14px; font-size: 12px; color: var(--muted); }
+  header .stats b { color: var(--text); font-weight: 600; }
+  .toolbar { display: flex; gap: 8px; padding: 14px 28px; border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: center; background: var(--panel); }
+  .toolbar input[type=search] { flex: 1; min-width: 200px; padding: 8px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font: inherit; }
+  .toolbar button, .chip {
+    padding: 6px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+    color: var(--text); font: inherit; font-size: 12px; cursor: pointer; user-select: none;
+  }
+  .toolbar button:hover, .chip:hover { border-color: var(--accent); }
+  .chip.active { background: var(--accent); color: #000; border-color: var(--accent); }
+  .chip .count { opacity: 0.6; margin-left: 6px; font-variant-numeric: tabular-nums; }
+  main { padding: 18px 28px 80px; }
+  .group { margin-bottom: 28px; }
+  .group h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px;
+    cursor: pointer; transition: transform 0.08s ease, border-color 0.08s ease;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .card .name { font-weight: 600; font-size: 15px; word-break: break-all; }
+  .card .label { color: var(--muted); font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+  .badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .badge.running { color: var(--green); background: rgba(74,222,128,0.12); }
+  .badge.scheduled { color: var(--blue); background: rgba(59,130,246,0.12); }
+  .badge.loaded { color: var(--gray); background: rgba(107,114,128,0.18); }
+  .badge.error { color: var(--red); background: rgba(239,68,68,0.14); }
+  .badge.disabled { color: var(--muted); background: rgba(139,147,166,0.14); }
+  .badge.missing { color: var(--amber); background: rgba(245,158,11,0.14); }
+  .card .desc { margin-top: 10px; font-size: 12.5px; color: var(--text); opacity: 0.85; line-height: 1.45;
+                display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .card .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .card .meta span { display: inline-flex; align-items: center; gap: 4px; }
+  .card .meta b { color: var(--text); font-weight: 500; }
+  .channels { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .ch {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 500;
+    background: rgba(110,168,254,0.14); color: var(--accent); border: 1px solid rgba(110,168,254,0.25);
+  }
+  .ch.delivery { background: rgba(74,222,128,0.13); color: var(--green); border-color: rgba(74,222,128,0.25); }
+  .activity { font-size: 11px; color: var(--muted); margin-top: 8px; font-variant-numeric: tabular-nums; }
+  /* Issue panel on cards */
+  .issue {
+    margin-top: 10px; padding: 10px 12px;
+    background: rgba(239,68,68,0.07); border: 1px solid rgba(239,68,68,0.25);
+    border-left: 3px solid var(--red); border-radius: 6px;
+    font-size: 12.5px; line-height: 1.4;
+  }
+  .issue.warn   { background: rgba(245,158,11,0.07); border-color: rgba(245,158,11,0.25); border-left-color: var(--amber); }
+  .issue.info   { background: rgba(110,168,254,0.07); border-color: rgba(110,168,254,0.25); border-left-color: var(--accent); }
+  .issue .msg   { color: var(--text); font-weight: 500; }
+  .issue .det   { color: var(--muted); margin-top: 4px; font-size: 11.5px; }
+  .issue .actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .fix-btn {
+    background: var(--accent); color: #fff; border: 0; padding: 5px 12px; border-radius: 5px;
+    font: 600 11.5px/1 inherit; cursor: pointer; letter-spacing: 0.01em;
+  }
+  .fix-btn:hover { filter: brightness(1.1); }
+  .fix-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .fix-btn.danger { background: var(--red); }
+  .fix-btn.muted  { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  /* Confirmation modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; z-index: 100; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: min(440px, 92vw); }
+  .modal h3 { margin: 0 0 8px; font-size: 16px; }
+  .modal p  { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--green);
+    padding: 12px 18px; border-radius: 8px; font-size: 13px; z-index: 200;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3); max-width: 90vw;
+    opacity: 0; transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  .toast.error { border-left-color: var(--red); }
+  /* Server status banner */
+  .server-banner {
+    background: rgba(245,158,11,0.10); border-bottom: 1px solid rgba(245,158,11,0.3);
+    padding: 10px 28px; font-size: 12.5px; color: var(--text);
+  }
+  .server-banner code { background: var(--panel-2); padding: 2px 6px; border-radius: 3px; }
+  .last-active {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 10px; padding: 4px 10px; border-radius: 6px;
+    font-size: 11.5px; font-variant-numeric: tabular-nums;
+    background: var(--panel-2); border: 1px solid var(--border);
+  }
+  .last-active::before { content: '●'; font-size: 10px; }
+  .last-active.fresh::before { color: var(--green); }
+  .last-active.recent::before { color: var(--blue); }
+  .last-active.stale::before { color: var(--amber); }
+  .last-active.cold::before { color: var(--gray); }
+  .last-active.never::before { color: var(--muted); opacity: 0.5; }
+  /* Explanation (markdown rendered) */
+  .explanation { font-size: 13.5px; line-height: 1.55; }
+  .explanation h4, .explanation h5 { margin: 16px 0 6px; font-size: 12px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
+  .explanation h4:first-child, .explanation h5:first-child { margin-top: 0; }
+  .explanation p { margin: 0 0 10px; }
+  .explanation ul { margin: 4px 0 12px; padding-left: 22px; }
+  .explanation li { margin-bottom: 4px; }
+  .explanation code { background: var(--panel-2); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .explanation b { color: var(--text); }
+  .source-toggle { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 6px 12px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; }
+  .source-toggle:hover { border-color: var(--accent); color: var(--text); }
+  .explanation-loading { color: var(--muted); font-style: italic; padding: 12px 0; }
+  /* Source code view */
+  .source {
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px;
+    font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    max-height: 480px; overflow: auto; padding: 12px; white-space: pre; tab-size: 4;
+  }
+  .source .ln { display: inline-block; width: 38px; color: var(--muted); opacity: 0.5; user-select: none; padding-right: 12px; text-align: right; }
+  .src-toolbar { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 11px; color: var(--muted); }
+  .src-toolbar code { background: var(--panel-2); padding: 1px 6px; border-radius: 3px; }
+  .src-toolbar a { color: var(--accent); text-decoration: none; cursor: pointer; }
+  .src-toolbar a:hover { text-decoration: underline; }
+  .src-trunc { background: rgba(245,158,11,0.14); color: var(--amber); padding: 2px 6px; border-radius: 3px; font-size: 10.5px; }
+  /* Drawer */
+  .drawer-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; z-index: 50; }
+  .drawer-bg.open { display: block; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(720px, 96vw);
+    background: var(--panel); border-left: 1px solid var(--border); z-index: 51;
+    transform: translateX(100%); transition: transform 0.18s ease; overflow-y: auto;
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer header { position: sticky; top: 0; background: var(--panel); }
+  .drawer h3 { margin: 18px 28px 6px; font-size: 12px; text-transform: uppercase; color: var(--muted); letter-spacing: 0.06em; }
+  .drawer .section { padding: 0 28px 14px; }
+  .drawer pre {
+    background: var(--panel-2); padding: 12px; border-radius: 6px; border: 1px solid var(--border);
+    font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-x: auto;
+    max-height: 360px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  .drawer .kv { display: grid; grid-template-columns: 140px 1fr; gap: 6px 14px; font-size: 13px; }
+  .drawer .kv dt { color: var(--muted); }
+  .drawer .kv dd { margin: 0; word-break: break-all; }
+  .close { background: transparent; border: 0; color: var(--text); font-size: 24px; cursor: pointer; padding: 0 8px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .empty { padding: 40px 0; text-align: center; color: var(--muted); }
+  .ago { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="server-banner" id="server-banner" style="display:none">
+  ⚠️ Auto-fix is disabled — open this page from <code>http://127.0.0.1:8765/</code> to enable fix buttons.
+  Start the server with: <code>python3 ~/Workspace/scripts/services-dashboard/server.py</code>
+</div>
 
-def _load_template() -> str:
-    """Read template.html fresh on each render so edits show up without restarting."""
-    if not TEMPLATE_FILE.exists():
-        raise FileNotFoundError(
-            f"template.html not found at {TEMPLATE_FILE}. "
-            "It must live next to scan.py."
-        )
-    return TEMPLATE_FILE.read_text(encoding="utf-8")
+<header>
+  <h1>Services Dashboard</h1>
+  <span class="meta" id="generated"></span>
+  <div class="stats" id="stats"></div>
+</header>
+
+<div class="toolbar">
+  <input type="search" id="search" placeholder="Search by name, label, project path…" autofocus>
+  <span class="chip active" data-status="all">All</span>
+  <span class="chip" data-status="running">Running</span>
+  <span class="chip" data-status="scheduled">Scheduled</span>
+  <span class="chip" data-status="error">Error</span>
+  <span class="chip" data-status="disabled">Disabled</span>
+  <span style="width:1px;height:20px;background:var(--border);margin:0 4px"></span>
+  <span class="chip active" data-scope="personal">Personal</span>
+  <span class="chip" data-scope="all">+ System</span>
+</div>
+
+<main id="main"></main>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal">
+    <h3 id="modal-title">Confirm fix</h3>
+    <p id="modal-body"></p>
+    <div class="actions">
+      <button class="fix-btn muted" id="modal-cancel">Cancel</button>
+      <button class="fix-btn" id="modal-confirm">Apply</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="drawer-bg" id="drawer-bg"></div>
+<aside class="drawer" id="drawer">
+  <header>
+    <h1 id="drawer-title">—</h1>
+    <button class="close" id="drawer-close">×</button>
+  </header>
+  <div id="drawer-body"></div>
+</aside>
+
+<script>
+const DATA = __DATA__;
+
+const STATE = {
+  search: '',
+  status: 'all',
+  scope: 'personal',
+};
+
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const t = new Date(iso).getTime();
+  const diff = Date.now() - t;
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return s + 's ago';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 48) return h + 'h ago';
+  const d = Math.floor(h / 24);
+  return d + 'd ago';
+}
+
+function freshnessClass(iso) {
+  if (!iso) return 'never';
+  const hoursAgo = (Date.now() - new Date(iso).getTime()) / (1000 * 3600);
+  if (hoursAgo < 1) return 'fresh';
+  if (hoursAgo < 24) return 'recent';
+  if (hoursAgo < 24 * 7) return 'stale';
+  return 'cold';
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+// Tiny markdown renderer — handles headings, bullets, paragraphs, **bold**, *em*, `code`.
+function renderMd(md) {
+  if (!md) return '';
+  const blocks = md.split(/\n\s*\n/);
+  return blocks.map(block => {
+    block = block.trim();
+    if (!block) return '';
+    // Heading
+    let m = block.match(/^(#{1,6})\s+(.+)$/);
+    if (m) {
+      const level = Math.min(6, Math.max(4, m[1].length + 3));
+      return `<h${level}>${inlineMd(m[2])}</h${level}>`;
+    }
+    // Bulleted list
+    if (/^[-*]\s+/.test(block)) {
+      const items = block.split(/\n/).filter(l => /^[-*]\s+/.test(l.trim()))
+        .map(l => `<li>${inlineMd(l.replace(/^[-*]\s+/, ''))}</li>`).join('');
+      return `<ul>${items}</ul>`;
+    }
+    return `<p>${inlineMd(block.replace(/\n/g, ' '))}</p>`;
+  }).join('');
+}
+
+function inlineMd(s) {
+  s = escapeHtml(s);
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  s = s.replace(/(^|[\s(])\*([^*]+)\*/g, '$1<i>$2</i>');
+  return s;
+}
+
+function fmtBytes(n) {
+  if (!n) return '0 B';
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  return (n/1024/1024).toFixed(1) + ' MB';
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderHeader() {
+  document.getElementById('generated').textContent =
+    `Generated ${timeAgo(DATA.generated_at)} · ${DATA.host} · ${DATA.services.length} services`;
+
+  const counts = { running: 0, scheduled: 0, error: 0, loaded: 0, disabled: 0, missing: 0 };
+  for (const s of DATA.services) counts[s.status] = (counts[s.status] || 0) + 1;
+  document.getElementById('stats').innerHTML = `
+    <span><b>${counts.running}</b> running</span>
+    <span><b>${counts.scheduled}</b> scheduled</span>
+    <span><b>${counts.error || 0}</b> errors</span>
+    <span><b>${counts.disabled}</b> disabled</span>
+  `;
+
+  // Update chip counts
+  for (const chip of document.querySelectorAll('.chip[data-status]')) {
+    const status = chip.dataset.status;
+    const count = status === 'all' ? DATA.services.length : (counts[status] || 0);
+    if (!chip.querySelector('.count')) {
+      chip.insertAdjacentHTML('beforeend', `<span class="count">${count}</span>`);
+    }
+  }
+}
+
+function filtered() {
+  const q = STATE.search.trim().toLowerCase();
+  return DATA.services.filter(s => {
+    if (STATE.scope === 'personal' && !s.is_personal) return false;
+    if (STATE.status !== 'all' && s.status !== STATE.status) return false;
+    if (q) {
+      const hay = (s.label + ' ' + s.name + ' ' + (s.project_dir || '') + ' ' + (s.program_args || []).join(' ')).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function render() {
+  const main = document.getElementById('main');
+  const items = filtered();
+  if (!items.length) {
+    main.innerHTML = `<div class="empty">No services match.</div>`;
+    return;
+  }
+
+  // Group by namespace
+  const byNs = {};
+  for (const s of items) (byNs[s.namespace] ||= []).push(s);
+  const order = Object.keys(byNs).sort((a, b) => byNs[b].length - byNs[a].length);
+
+  main.innerHTML = order.map(ns => `
+    <section class="group">
+      <h2>${escapeHtml(ns)} <span style="opacity:0.5">· ${byNs[ns].length}</span></h2>
+      <div class="grid">
+        ${byNs[ns].map(card).join('')}
+      </div>
+    </section>
+  `).join('');
+
+  for (const el of main.querySelectorAll('.card')) {
+    // Click anywhere except a fix button opens the drawer
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.fix-btn')) return;
+      openDrawer(el.dataset.label);
+    });
+  }
+
+  // Wire fix buttons
+  for (const btn of main.querySelectorAll('.fix-btn[data-fix]')) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      requestFix(btn);
+    });
+  }
+
+  // Disable fix buttons if server isn't reachable
+  if (!SERVER_AVAILABLE) {
+    for (const btn of main.querySelectorAll('.fix-btn[data-fix]')) {
+      btn.disabled = true;
+      btn.title = 'Auto-fix server not reachable. See banner at top of page.';
+    }
+  }
+}
+
+// ── Server detection + fix request flow ─────────────────────────────────
+
+let SERVER_AVAILABLE = false;
+async function checkServer() {
+  if (window.location.protocol !== 'http:') return false;
+  try {
+    const r = await fetch('/api/health', { method: 'GET' });
+    if (!r.ok) return false;
+    const j = await r.json();
+    return !!j.ok;
+  } catch (e) { return false; }
+}
+
+function showToast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.toggle('error', isError);
+  el.classList.add('show');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+let _pendingFix = null;
+function requestFix(btn) {
+  const action = btn.dataset.fix;
+  const label = btn.dataset.label;
+  const fixLabel = btn.dataset.fixLabel;
+  const confirm = btn.dataset.fixConfirm;
+  _pendingFix = { action, label, fixLabel, btn };
+  document.getElementById('modal-title').textContent = `${fixLabel}: ${label}`;
+  document.getElementById('modal-body').textContent = confirm || 'Are you sure you want to apply this fix?';
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+document.getElementById('modal-cancel').addEventListener('click', () => {
+  document.getElementById('modal-bg').classList.remove('open');
+  _pendingFix = null;
+});
+document.getElementById('modal-confirm').addEventListener('click', async () => {
+  if (!_pendingFix) return;
+  const { action, label, btn } = _pendingFix;
+  document.getElementById('modal-bg').classList.remove('open');
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    const r = await fetch('/api/fix', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, label }),
+    });
+    const j = await r.json();
+    if (j.ok) {
+      showToast('✓ ' + (j.message || 'Done'));
+      // Pull fresh data and re-render
+      await loadFreshData();
+    } else {
+      showToast('✗ ' + (j.message || 'Fix failed'), true);
+      btn.disabled = false;
+      btn.textContent = _pendingFix.fixLabel;
+    }
+  } catch (e) {
+    showToast('✗ ' + e.message, true);
+    btn.disabled = false;
+    btn.textContent = _pendingFix.fixLabel;
+  }
+  _pendingFix = null;
+});
+
+async function loadFreshData() {
+  if (!SERVER_AVAILABLE) return;
+  try {
+    const r = await fetch('/api/data');
+    if (r.ok) {
+      const fresh = await r.json();
+      DATA.services = fresh.services;
+      DATA.generated_at = fresh.generated_at;
+      renderHeader();
+      render();
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// Channels considered "delivery" (where output is actually sent) vs storage/runtime.
+const DELIVERY_CHANNELS = new Set([
+  'Email', 'Telegram', 'Slack', 'Discord', 'Twilio/SMS', 'Phone call',
+  'Voice/TTS', 'Reminders', 'Calendar', 'Notion', 'Obsidian', 'Webhook'
+]);
+
+function channelChips(channels) {
+  if (!channels || !channels.length) return '';
+  return `<div class="channels">` + channels.slice(0, 6).map(c =>
+    `<span class="ch ${DELIVERY_CHANNELS.has(c) ? 'delivery' : ''}">${escapeHtml(c)}</span>`
+  ).join('') + `</div>`;
+}
+
+// Issue types we treat as warnings vs hard errors (visual only)
+const WARN_ISSUES = new Set(['stale_stderr', 'missing_command', 'permission_denied']);
+const INFO_ISSUES = new Set(['not_loaded']);
+
+function issueBlock(s) {
+  if (!s.issue) return '';
+  const issue = s.issue;
+  const severity = WARN_ISSUES.has(issue.type) ? 'warn'
+                 : INFO_ISSUES.has(issue.type) ? 'info' : '';
+  const fix = issue.fix;
+  return `
+    <div class="issue ${severity}">
+      <div class="msg">${escapeHtml(issue.message)}</div>
+      ${issue.detail ? `<div class="det">${escapeHtml(issue.detail)}</div>` : ''}
+      <div class="actions">
+        ${fix ? `<button class="fix-btn ${fix.action === 'disable' ? 'danger' : ''}"
+                       data-fix="${escapeHtml(fix.action)}"
+                       data-label="${escapeHtml(s.label)}"
+                       data-fix-label="${escapeHtml(fix.label)}"
+                       data-fix-confirm="${escapeHtml(fix.confirm || '')}">
+                  ${escapeHtml(fix.label)}
+                </button>` : ''}
+        ${!fix ? '<span style="color:var(--muted);font-size:11.5px;font-style:italic">Manual action required</span>' : ''}
+      </div>
+    </div>
+  `;
+}
+
+function card(s) {
+  const sched = s.schedule || {};
+  const errCount = (s.stderr_errors || []).length;
+  const errTip = errCount ? escapeHtml(s.stderr_errors.slice(-3).join('\n')) : '';
+  return `
+    <div class="card" data-label="${escapeHtml(s.label)}">
+      <div class="top">
+        <div>
+          <div class="name">${escapeHtml(s.name)}</div>
+          <div class="label">${escapeHtml(s.label)}</div>
+        </div>
+        <span class="badge ${s.status}">${s.status}${s.pid ? ' · ' + s.pid : ''}</span>
+      </div>
+      <div class="desc">${s.description ? escapeHtml(s.description) : '<span style="opacity:0.5">— no description found in script —</span>'}</div>
+      ${channelChips(s.channels)}
+      ${issueBlock(s)}
+      <div class="meta">
+        <span>📅 <b>${escapeHtml(sched.summary || '')}</b></span>
+        ${errCount && s.status !== 'disabled' && !s.issue ? `<span style="color:var(--red)" title="${errTip}">⚠️ ${errCount} error${errCount>1?'s':''} in stderr</span>` : ''}
+      </div>
+      <div class="last-active ${freshnessClass(s.last_activity)}" title="${fmtDate(s.last_activity)}">
+        Last active: ${timeAgo(s.last_activity)}
+      </div>
+    </div>
+  `;
+}
+
+function openDrawer(label) {
+  const s = DATA.services.find(x => x.label === label);
+  if (!s) return;
+  document.getElementById('drawer-title').textContent = s.name;
+  const sched = s.schedule || {};
+  const src = s.source || {};
+  const linesOfSource = src.content ? src.content.split('\n') : [];
+  const numbered = linesOfSource.map((ln, i) =>
+    `<span class="ln">${i+1}</span>${escapeHtml(ln)}`
+  ).join('\n');
+
+  document.getElementById('drawer-body').innerHTML = `
+    <div class="section">
+      <span class="badge ${s.status}">${s.status}${s.pid ? ' · pid ' + s.pid : ''}</span>
+    </div>
+
+    ${s.description ? `
+      <h3>What it does</h3>
+      <div class="section" style="white-space:pre-wrap;line-height:1.55">${escapeHtml(s.description)}</div>
+    ` : ''}
+
+    ${(s.channels && s.channels.length) ? `
+      <h3>Detected delivery / dependencies</h3>
+      <div class="section">${channelChips(s.channels)}</div>
+    ` : ''}
+
+    ${(s.stderr_errors && s.stderr_errors.length) ? `
+      <h3 style="color:var(--red)">⚠️ Errors detected in stderr</h3>
+      <div class="section">
+        <pre style="border-color:rgba(239,68,68,0.4);background:rgba(239,68,68,0.06)">${escapeHtml(s.stderr_errors.join('\n'))}</pre>
+      </div>
+    ` : ''}
+
+    <h3>Identity</h3>
+    <div class="section">
+      <dl class="kv">
+        <dt>Label</dt><dd><code>${escapeHtml(s.label)}</code></dd>
+        <dt>Namespace</dt><dd>${escapeHtml(s.namespace)}</dd>
+        <dt>Plist</dt><dd><code>${escapeHtml(s.plist_path)}</code></dd>
+        ${s.project_dir ? `<dt>Project dir</dt><dd><code>${escapeHtml(s.project_dir)}</code></dd>` : ''}
+        ${s.entry_script ? `<dt>Entry script</dt><dd><code>${escapeHtml(s.entry_script)}</code></dd>` : ''}
+      </dl>
+    </div>
+
+    <h3>Schedule</h3>
+    <div class="section">
+      <dl class="kv">
+        <dt>Type</dt><dd>${escapeHtml(sched.type || '—')}</dd>
+        <dt>Summary</dt><dd>${escapeHtml(sched.summary || '—')}</dd>
+        <dt>Last exit code</dt><dd>${s.last_exit_code == null ? '—' : s.last_exit_code}</dd>
+      </dl>
+    </div>
+
+    <h3>Command</h3>
+    <div class="section">
+      <pre>${escapeHtml((s.program_args || []).join(' \\\n  '))}</pre>
+    </div>
+
+    ${src.path ? `
+      <h3>How it works</h3>
+      <div class="section">
+        ${s.explanation ? `<div class="explanation">${renderMd(s.explanation)}</div>`
+          : `<div class="explanation-loading">No explanation generated yet — Claude will produce one on the next refresh (requires ANTHROPIC_API_KEY).</div>`}
+      </div>
+
+      <h3>Source</h3>
+      <div class="section">
+        <div class="src-toolbar">
+          <span><code>${escapeHtml(src.path)}</code></span>
+          <span><b>${src.language || 'text'}</b> · ${fmtBytes(src.size || 0)}</span>
+          ${src.truncated ? `<span class="src-trunc">truncated</span>` : ''}
+          <a onclick="navigator.clipboard.writeText(${JSON.stringify(src.content || '')})">copy</a>
+          <a onclick="openInEditor(${JSON.stringify(src.path)})">open in editor</a>
+          <button class="source-toggle" id="toggle-src">Show source</button>
+        </div>
+        <div class="source" id="src-block" style="display:none">${numbered || '(empty)'}</div>
+      </div>
+    ` : ''}
+
+    ${s.stdout_path ? `
+      <h3>stdout — <code>${escapeHtml(s.stdout_path)}</code> · ${fmtBytes(s.stdout_meta?.size || 0)} · ${timeAgo(s.stdout_meta?.mtime)}</h3>
+      <div class="section">
+        <pre>${escapeHtml(s.stdout_tail || '(empty)')}</pre>
+      </div>
+    ` : ''}
+
+    ${s.stderr_path ? `
+      <h3>stderr — <code>${escapeHtml(s.stderr_path)}</code> · ${fmtBytes(s.stderr_meta?.size || 0)} · ${timeAgo(s.stderr_meta?.mtime)}</h3>
+      <div class="section">
+        <pre>${escapeHtml(s.stderr_tail || '(empty)')}</pre>
+      </div>
+    ` : ''}
+
+    ${Object.keys(s.environment || {}).length ? `
+      <h3>Environment</h3>
+      <div class="section">
+        <pre>${escapeHtml(Object.entries(s.environment).map(([k,v]) => k + '=' + v).join('\n'))}</pre>
+      </div>
+    ` : ''}
+  `;
+  // Wire the "Show source" toggle (re-bound each time the drawer opens)
+  const toggleBtn = document.getElementById('toggle-src');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      const block = document.getElementById('src-block');
+      const showing = block.style.display !== 'none';
+      block.style.display = showing ? 'none' : 'block';
+      toggleBtn.textContent = showing ? 'Show source' : 'Hide source';
+    });
+  }
+
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('drawer-bg').classList.add('open');
+}
+
+function openInEditor(path) {
+  // Try VS Code first, fall back to default app via file://
+  window.open('vscode://file' + path, '_blank');
+}
+
+document.getElementById('drawer-close').addEventListener('click', closeDrawer);
+document.getElementById('drawer-bg').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+function closeDrawer() {
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('drawer-bg').classList.remove('open');
+}
+
+document.getElementById('search').addEventListener('input', e => {
+  STATE.search = e.target.value; render();
+});
+
+for (const chip of document.querySelectorAll('.chip[data-status]')) {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip[data-status]').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    STATE.status = chip.dataset.status; render();
+  });
+}
+for (const chip of document.querySelectorAll('.chip[data-scope]')) {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip[data-scope]').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    STATE.scope = chip.dataset.scope; render();
+  });
+}
+
+(async function boot() {
+  SERVER_AVAILABLE = await checkServer();
+  if (!SERVER_AVAILABLE) {
+    document.getElementById('server-banner').style.display = 'block';
+  }
+  renderHeader();
+  render();
+})();
+</script>
+</body>
+</html>
+"""
 
 
 def render_html(data: dict[str, Any]) -> str:
     payload = json.dumps(data, default=str)
     # Defang sequences that would break the embedding <script>...</script> tag.
+    # JSON parses "\/" identically to "/", so escaping "</" → "<\/" is safe and
+    # prevents browsers from terminating the script block when an embedded
+    # source file contains literal "</script>".
     payload = payload.replace("</", "<\\/")
     payload = payload.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
-    html = _load_template()
-    html = html.replace("__HOST__", data.get("host", ""))
+    html = HTML_TEMPLATE.replace("__HOST__", data.get("host", ""))
     html = html.replace("__DATA__", payload)
     return html
 

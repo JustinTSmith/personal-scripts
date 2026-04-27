@@ -1,0 +1,916 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Services Dashboard — __HOST__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: oklch(0.985 0.005 90); font-family: "Inter Tight", system-ui, sans-serif; color: oklch(0.20 0.01 280); }
+  * { box-sizing: border-box; }
+  #root { width: 100%; min-height: 100vh; }
+  button { font-family: inherit; }
+  input, textarea { font-family: inherit; }
+
+  /* Markdown rendered inside the "How it works" panel */
+  .howitworks-md > *:first-child { margin-top: 0; }
+  .howitworks-md > *:last-child { margin-bottom: 0; }
+  .howitworks-md h4, .howitworks-md h5, .howitworks-md h6 {
+    margin: 14px 0 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: oklch(0.55 0.16 285);
+  }
+  .howitworks-md p { margin: 0 0 10px; }
+  .howitworks-md ul { margin: 4px 0 12px; padding-left: 20px; }
+  .howitworks-md li { margin-bottom: 4px; }
+  .howitworks-md code {
+    background: oklch(0.96 0.005 280);
+    padding: 1px 5px; border-radius: 3px;
+    font-family: "JetBrains Mono", monospace; font-size: 12px;
+  }
+  .howitworks-md b { color: oklch(0.20 0.01 280); font-weight: 600; }
+
+  /* Source-code panel */
+  .source-pre {
+    margin: 0; padding: 12px 14px;
+    background: oklch(0.985 0.004 280);
+    border: 1px solid oklch(0.91 0.005 280); border-radius: 6px;
+    font: 11.5px/1.55 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: oklch(0.25 0.01 280);
+    max-height: 480px; overflow: auto;
+    white-space: pre; tab-size: 4;
+  }
+  .source-pre .ln {
+    display: inline-block; width: 36px;
+    color: oklch(0.65 0.01 280); user-select: none;
+    padding-right: 12px; text-align: right;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+  // Server-injected snapshot. scan.py substitutes the placeholder below.
+  window.DASHBOARD_DATA = __DATA__;
+</script>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" data-presets="env,react">
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared helpers + design tokens
+// ─────────────────────────────────────────────────────────────────────────────
+const D = window.DASHBOARD_DATA;
+const NOW = D ? new Date(D.generated_at).getTime() : Date.now();
+
+function timeAgo(iso) {
+  if (!iso) return 'never';
+  const t = new Date(iso).getTime();
+  const diff = NOW - t;
+  if (diff < 0) return 'just now';
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return s + 's ago';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 48) return h + 'h ago';
+  const d = Math.floor(h / 24);
+  return d + 'd ago';
+}
+
+function synthSpark(s, hours = 24) {
+  const buckets = new Array(hours).fill(0);
+  if (!s.last_activity) return buckets;
+  const sched = s.schedule || {};
+  const lastT = new Date(s.last_activity).getTime();
+  const lastBucket = hours - 1 - Math.floor((NOW - lastT) / 3600000);
+  let interval;
+  if (sched.type === 'interval') interval = Math.max(1, Math.round(sched.raw / 3600));
+  else if (sched.type === 'keepalive') interval = 1;
+  else if (sched.type === 'calendar') interval = 24 * 7;
+  else interval = 24;
+  if (sched.type === 'keepalive') {
+    for (let i = 0; i < hours; i++) {
+      const dist = lastBucket - i;
+      if (dist >= 0) buckets[i] = Math.max(0.4, 1 - dist * 0.04);
+    }
+  } else {
+    for (let b = lastBucket; b >= 0; b -= interval) {
+      if (b < hours) buckets[b] = 1;
+    }
+  }
+  return buckets.map((v, i) => v ? Math.min(1, v * (0.7 + ((i * 9301 + 49297) % 233) / 233 * 0.5)) : 0);
+}
+
+const STATUS = {
+  running:   { label: 'Running',   ink: 'oklch(0.55 0.15 155)', dot: 'oklch(0.65 0.18 155)' },
+  scheduled: { label: 'Scheduled', ink: 'oklch(0.50 0.15 250)', dot: 'oklch(0.62 0.18 250)' },
+  loaded:    { label: 'Loaded',    ink: 'oklch(0.45 0.02 280)', dot: 'oklch(0.65 0.02 280)' },
+  error:     { label: 'Error',     ink: 'oklch(0.50 0.18 25)',  dot: 'oklch(0.62 0.20 25)' },
+  disabled:  { label: 'Disabled',  ink: 'oklch(0.55 0.01 280)', dot: 'oklch(0.70 0.01 280)' },
+  missing:   { label: 'Missing',   ink: 'oklch(0.50 0.16 75)',  dot: 'oklch(0.65 0.18 75)' },
+};
+
+function shortName(s) { return s.name || s.label.split('.').pop(); }
+
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderMd(md) {
+  if (!md) return '';
+  const inline = (s) => {
+    s = escHtml(s);
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    s = s.replace(/(^|[\s(])\*([^*]+)\*/g, '$1<i>$2</i>');
+    return s;
+  };
+  return md.split(/\n\s*\n/).map(block => {
+    block = block.trim();
+    if (!block) return '';
+    const m = block.match(/^(#{1,6})\s+(.+)$/);
+    if (m) {
+      const level = Math.min(6, Math.max(4, m[1].length + 3));
+      return '<h' + level + '>' + inline(m[2]) + '</h' + level + '>';
+    }
+    if (/^[-*]\s+/.test(block)) {
+      const items = block.split(/\n/).filter(l => /^[-*]\s+/.test(l.trim()))
+        .map(l => '<li>' + inline(l.replace(/^[-*]\s+/, '')) + '</li>').join('');
+      return '<ul>' + items + '</ul>';
+    }
+    return '<p>' + inline(block.replace(/\n/g, ' ')) + '</p>';
+  }).join('');
+}
+
+function lastLines(s, n = 6) {
+  if (!s) return '';
+  return s.split('\n').filter(Boolean).slice(-n).join('\n');
+}
+
+function counts(services) {
+  const c = { running: 0, scheduled: 0, error: 0, loaded: 0, disabled: 0, missing: 0 };
+  for (const s of services) c[s.status] = (c[s.status] || 0) + 1;
+  c.total = services.length;
+  return c;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Service taxonomy — manual classification + short human-readable descriptions
+// ─────────────────────────────────────────────────────────────────────────────
+const CATEGORIES = [
+  {
+    id: 'watchdogs',
+    title: 'Watchdogs & Health Checks',
+    blurb: 'Quietly poke critical services and raise the alarm when something is off.',
+    icon: '◉',
+    test: s =>
+      /watchdog/.test(s.label) ||
+      /cron-health-check/.test(s.label) ||
+      /integrity-drill/.test(s.label),
+  },
+  {
+    id: 'gateways',
+    title: 'Gateways & Always-on Servers',
+    blurb: 'Long-running daemons: bots, MCP servers, local APIs, dashboards.',
+    icon: '∞',
+    test: s =>
+      s.schedule?.type === 'keepalive' ||
+      /(gateway|server|bot|qwen3-tts|nerve|ollama|paperclip|services-dashboard|openclaw-dashboard|\.mac$|gmail-automation)/.test(s.label),
+  },
+  {
+    id: 'briefings',
+    title: 'Daily Briefings & Voice',
+    blurb: 'Morning calls, scheduled summaries, weekly newsletters.',
+    icon: '☎',
+    test: s =>
+      /(morning-call|weekly-briefing|daily-task-scheduler|last30days|gmail-weekly-digest|model-usage-weekly|diag-daily)/.test(s.label),
+  },
+  {
+    id: 'lifeos',
+    title: 'Life OS & Personal CRM',
+    blurb: 'Task syncing, evidence tracking, follow-up nudges, relationship pulse.',
+    icon: '◐',
+    test: s =>
+      /(tasks-to-reminders|tasks-weekly-archive|ob1-|crm-followup|imessage-relationships|personal-crm)/.test(s.label),
+  },
+  {
+    id: 'health',
+    title: 'Health & Nutrition',
+    blurb: 'Apple Health pipelines, nutrition tracker, naps, daily/weekly reports.',
+    icon: '♡',
+    test: s =>
+      /(health-|nutrition-|willowbrae-nap|apple-health)/.test(s.label),
+  },
+  {
+    id: 'voice',
+    title: 'Voice Notes & Obsidian',
+    blurb: 'Transcribe voice notes, sync the vault, build the index.',
+    icon: '◑',
+    test: s => /(obsidian|sync-obsidian)/.test(s.label),
+  },
+  {
+    id: 'backups',
+    title: 'Backups & Repo Sync',
+    blurb: 'Encrypted backups, git auto-commits, dropbox dedupe.',
+    icon: '⇧',
+    test: s => /(backup-|git-sync|dropbox-drive-dedupe)/.test(s.label),
+  },
+];
+
+const FRIENDLY = {
+  'ai.openclaw.backup-full':                   'Encrypted full-system backup; uploads tarball, prunes to 7.',
+  'ai.openclaw.backup-sqlite':                 'SQLite-only backup snapshot.',
+  'ai.openclaw.gateway':                       'OpenClaw gateway — Telegram/Slack/web bridge for the agent.',
+  'ai.openclaw.git-sync':                      'Auto-commit + rebase of the OpenClaw config repo.',
+  'ai.openclaw.integrity-drill':               'Drill that verifies backups can actually be restored.',
+  'ai.openclaw.mac':                           'Launches the OpenClaw desktop app on demand.',
+  'com.justinos.health-daily':                 'Pulls Apple Health and generates the daily health report.',
+  'com.justinos.health-watchdog':              'Watches raw health-data folders for new files; kicks off ingest.',
+  'com.justinos.health-weekly':                "Roll-up of the week's health metrics.",
+  'com.justinos.nutrition-daily':              'Builds the nutrition report and posts it to Telegram.',
+  'com.justinos.nutrition-tracker':            'Tracks meals; nudges if something is missing.',
+  'com.justinos.willowbrae-nap-importer':      'Imports nap-tracking data from the Willowbrae source.',
+  'com.justinsmith.ai-watchdog':               'Checks AI services are alive; restarts the unhealthy ones.',
+  'com.justinsmith.apple-health-local-server': 'Local HTTP endpoint for the iOS Health Shortcut to push data to.',
+  'com.justinsmith.crm-followup':              'Finds people overdue for a follow-up; nudges via DM.',
+  'com.justinsmith.daily-task-scheduler':      'Reads Apple Reminders + calendar and plans your day.',
+  'com.justinsmith.direct-bot':                'Direct-message bot listener.',
+  'com.justinsmith.gmail-automation':          'Persistent Gmail daemon — auto-labels, drafts replies, files threads.',
+  'com.justinsmith.household-knowledge-server':'MCP server for household knowledge (lists, recipes, manuals).',
+  'com.justinsmith.meal-planning-server':      'MCP server reasoning across pantry, history, recipes, calendar.',
+  'com.justinsmith.nerve':                     'Nerve — the friendly UI layer over OpenClaw.',
+  'com.justinsmith.ob1-cascade-check':         'Detects "cascade" task patterns.',
+  'com.justinsmith.ob1-evidence-scan':         'Positive-evidence collector (gratitude / wins log).',
+  'com.justinsmith.ob1-evidence-weekly':       'Roll-up of positive evidence for the week.',
+  'com.justinsmith.obsidian-voice-processor':  'Listens for new voice notes; transcribes into Obsidian.',
+  'com.justinsmith.open-brain-server':         'Open-Brain MCP server — long-term memory over your notes.',
+  'com.justinsmith.openclaw-watchdog':         'Keeps the OpenClaw stack running.',
+  'com.justinsmith.personal-crm':              'Personal-CRM MCP server (people, relationships, history).',
+  'com.justinsmith.professional-crm-server':   'Professional-CRM MCP server (companies, deals, contacts).',
+  'com.justinsmith.qwen3-tts':                 'Local OpenAI-compatible TTS server (Qwen 3 voice).',
+  'com.justinsmith.services-dashboard':        'Rebuilds this dashboard.',
+  'com.justinsmith.twilio-morning-call':       'Calls your phone and reads the morning briefing.',
+  'com.justinsmith.weekly-briefing':           'Newsletter generator — Gmail digest + LLM synthesis.',
+  'com.last30days.daily':                      'Last-30-days synthesis via local LLM.',
+  'com.mudrii.openclaw-dashboard':             "Mudrii's zero-dep terminal dashboard for OpenClaw.",
+  'com.openclaw.cron-health-check':            'Verifies cron jobs are firing.',
+  'com.openclaw.diag-daily':                   'Diagnostics report.',
+  'com.openclaw.dropbox-drive-dedupe':         'Dropbox / Drive duplicate-file sweep.',
+  'com.openclaw.gmail-weekly-digest':          'Weekly Gmail digest email.',
+  'com.openclaw.imessage-relationships-monthly':'iMessage relationship pulse + scoring.',
+  'com.openclaw.model-usage-weekly':           'Model spend & usage report.',
+  'com.openclaw.obsidian-index':               'Rebuilds the Obsidian search index.',
+  'com.openclaw.obsidian-voice-processor':     'Picks up new voice memos for the vault.',
+  'com.openclaw.sync-obsidian':                'On-demand vault sync (runs at load).',
+  'com.openclaw.tasks-to-reminders':           'Pushes Life OS task .md files to Apple Reminders.',
+  'com.openclaw.tasks-weekly-archive':         'Archives completed tasks.',
+  'com.openclaw.watchdog':                     'Generic OpenClaw process watchdog.',
+  'com.paperclip.dashboard':                   'Paperclip — secondary status dashboard.',
+  'com.user.ollama.env':                       'Sets up Ollama environment variables on login.',
+};
+
+function categoryOf(s) {
+  for (const c of CATEGORIES) if (c.test(s)) return c.id;
+  return 'other';
+}
+
+function friendlyDescription(s) {
+  if (FRIENDLY[s.label]) return FRIENDLY[s.label];
+  const raw = (s.description || '').split('\n').map(l => l.trim()).filter(Boolean)[0];
+  if (raw && !raw.endsWith('.py') && !raw.endsWith('.sh') && raw.length > 8) return raw;
+  return null;
+}
+
+function groupByCategory(services) {
+  const groups = new Map();
+  for (const c of CATEGORIES) groups.set(c.id, { ...c, items: [] });
+  groups.set('other', { id: 'other', title: 'Other', blurb: 'Uncategorized.', icon: '·', items: [] });
+  for (const s of services) groups.get(categoryOf(s)).items.push(s);
+  return [...groups.values()].filter(g => g.items.length > 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tokens (Console v2)
+// ─────────────────────────────────────────────────────────────────────────────
+const ink = 'oklch(0.20 0.01 280)';
+const muted = 'oklch(0.52 0.01 280)';
+const paper = 'oklch(0.985 0.005 90)';
+const accent = 'oklch(0.55 0.16 285)';
+const accentSoft = 'oklch(0.95 0.04 285)';
+const rule = 'oklch(0.91 0.005 280)';
+const subtle = 'oklch(0.97 0.005 280)';
+
+const { useState, useMemo } = React;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Building blocks
+// ─────────────────────────────────────────────────────────────────────────────
+function Chip({ active, label, count, onClick, color }) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 7,
+      padding: '5px 11px',
+      border: `1px solid ${active ? (color || accent) : rule}`,
+      background: active ? (color ? `color-mix(in oklch, ${color} 12%, white)` : accentSoft) : '#fff',
+      color: active ? (color || accent) : ink,
+      borderRadius: 6, fontSize: 12, fontWeight: active ? 600 : 500, cursor: 'pointer',
+    }}>
+      {color && <span style={{ width: 6, height: 6, borderRadius: 99, background: color }} />}
+      {label}
+      <span style={{
+        fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+        color: active ? (color || accent) : muted,
+      }}>{count}</span>
+    </button>
+  );
+}
+
+function ScopeToggle({ scope, setScope, personalCount, totalCount }) {
+  const opt = (val, lbl, n) => (
+    <button onClick={() => setScope(val)} style={{
+      padding: '5px 11px',
+      border: 'none', background: scope === val ? '#fff' : 'transparent',
+      color: scope === val ? ink : muted,
+      fontSize: 12, fontWeight: scope === val ? 600 : 500, cursor: 'pointer',
+      borderRadius: 4,
+      boxShadow: scope === val ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+    }}>
+      {lbl} <span style={{
+        fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+        color: scope === val ? accent : muted, marginLeft: 4,
+      }}>{n}</span>
+    </button>
+  );
+  return (
+    <div style={{
+      display: 'inline-flex', alignItems: 'center', gap: 2,
+      padding: 3, background: subtle, border: `1px solid ${rule}`, borderRadius: 6,
+    }}>
+      {opt('personal', 'Personal', personalCount)}
+      {opt('all', '+ System', totalCount)}
+    </div>
+  );
+}
+
+function Spark({ data, color }) {
+  const w = 88, h = 18;
+  const max = Math.max(...data, 0.01);
+  const bw = w / data.length;
+  return (
+    <svg width={w} height={h} style={{ display: 'block' }}>
+      {data.map((v, i) => {
+        const bh = Math.max(1, (v / max) * (h - 2));
+        return <rect key={i} x={i * bw + 0.5} y={h - bh} width={bw - 1} height={bh}
+          fill={v > 0 ? color : 'oklch(0.93 0.004 280)'} rx={0.5} />;
+      })}
+    </svg>
+  );
+}
+
+function Heatmap({ services }) {
+  const hours = 24;
+  const matrix = services.map(s => synthSpark(s, hours));
+  const totals = new Array(hours).fill(0);
+  for (const row of matrix) row.forEach((v, i) => { if (v > 0) totals[i]++; });
+  const peak = Math.max(...totals, 1);
+  const cellW = 22, cellH = 22, gap = 2;
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap, height: cellH }}>
+        {totals.map((n, i) => {
+          const intensity = n / peak;
+          const bg = intensity === 0
+            ? 'oklch(0.96 0.005 280)'
+            : `color-mix(in oklch, ${accent} ${Math.round(intensity * 80) + 10}%, white)`;
+          return (
+            <div key={i} title={`${24 - i}h ago · ${n} active`} style={{
+              width: cellW, height: cellH, borderRadius: 4, background: bg,
+              border: `1px solid color-mix(in oklch, ${accent} ${intensity * 30}%, ${rule})`,
+            }} />
+          );
+        })}
+      </div>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        marginTop: 6, fontFamily: '"JetBrains Mono", monospace',
+        fontSize: 10, color: muted, letterSpacing: '0.04em',
+      }}>
+        <span>−24h</span><span>−18h</span><span>−12h</span><span>−6h</span><span>now</span>
+      </div>
+    </div>
+  );
+}
+
+function StatusDot({ status }) {
+  const m = STATUS[status] || STATUS.loaded;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 7,
+      fontSize: 12, color: m.ink, fontWeight: 500, whiteSpace: 'nowrap',
+    }}>
+      <span style={{
+        width: 7, height: 7, borderRadius: 99, background: m.dot,
+        boxShadow: status === 'running' ? `0 0 0 3px color-mix(in oklch, ${m.dot} 22%, transparent)` : 'none',
+      }} />
+      {m.label}
+    </span>
+  );
+}
+
+const btnPrimaryStyle = {
+  fontFamily: 'inherit', fontSize: 11, fontWeight: 600,
+  padding: '5px 11px', borderRadius: 5, cursor: 'pointer',
+  border: `1px solid ${accent}`, color: '#fff',
+  background: accent, letterSpacing: '0.01em',
+};
+const btnGhostStyle = {
+  fontFamily: 'inherit', fontSize: 11,
+  padding: '5px 11px', borderRadius: 5, cursor: 'pointer',
+  border: `1px solid ${rule}`, color: muted, background: '#fff',
+};
+const sectionLabelStyle = {
+  fontFamily: '"JetBrains Mono", monospace', fontSize: 9.5,
+  letterSpacing: '0.18em', textTransform: 'uppercase', color: muted,
+  marginBottom: 6,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HowItWorks panel — markdown explanation OR raw source code
+// ─────────────────────────────────────────────────────────────────────────────
+function HowItWorks({ service }) {
+  // Default: show markdown explanation. User can toggle to source code.
+  const [view, setView] = useState('explain'); // 'explain' | 'source'
+  const [md, setMd] = useState(service.explanation || '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const sourcePath = service.source?.path;
+  const sourceContent = service.source?.content;
+  const hasSource = !!sourceContent;
+
+  async function generate() {
+    if (loading) return;
+    setLoading(true); setError(null);
+    try {
+      const resp = await fetch('/api/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: service.label, force: true }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+      setMd(data.explanation || '');
+    } catch (e) {
+      setError(e?.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 8, gap: 8, flexWrap: 'wrap',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            fontFamily: '"JetBrains Mono", monospace', fontSize: 9.5,
+            letterSpacing: '0.18em', textTransform: 'uppercase', color: accent,
+            fontWeight: 600,
+          }}>How it works</div>
+          {hasSource && (
+            <div style={{
+              display: 'inline-flex', padding: 2,
+              background: subtle, border: `1px solid ${rule}`, borderRadius: 5,
+            }}>
+              <button onClick={() => setView('explain')} style={{
+                padding: '3px 9px', border: 'none',
+                background: view === 'explain' ? '#fff' : 'transparent',
+                color: view === 'explain' ? ink : muted,
+                fontSize: 11, fontWeight: view === 'explain' ? 600 : 500, cursor: 'pointer',
+                borderRadius: 3,
+                boxShadow: view === 'explain' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+              }}>Explanation</button>
+              <button onClick={() => setView('source')} style={{
+                padding: '3px 9px', border: 'none',
+                background: view === 'source' ? '#fff' : 'transparent',
+                color: view === 'source' ? ink : muted,
+                fontSize: 11, fontWeight: view === 'source' ? 600 : 500, cursor: 'pointer',
+                borderRadius: 3,
+                boxShadow: view === 'source' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                fontFamily: '"JetBrains Mono", monospace',
+              }}>Source</button>
+            </div>
+          )}
+        </div>
+        {view === 'explain' && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={generate} disabled={loading} style={btnPrimaryStyle}>
+              {loading ? 'Generating…' : (md ? 'Regenerate' : 'Generate explanation')}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {view === 'explain' ? (
+        md ? (
+          <div
+            className="howitworks-md"
+            style={{
+              background: '#fff', border: `1px solid ${rule}`, borderRadius: 6,
+              padding: '12px 16px', fontSize: 13, color: ink, lineHeight: 1.55,
+            }}
+            dangerouslySetInnerHTML={{ __html: renderMd(md) }}
+          />
+        ) : (
+          <div style={{
+            background: '#fff', border: `1px dashed ${rule}`, borderRadius: 6,
+            padding: '12px 16px', fontSize: 12.5, color: muted, fontStyle: 'italic',
+          }}>
+            No explanation cached yet. {hasSource ? 'Click "Generate explanation" to synthesize one from the source code.' : "(No source captured for this service.)"}
+          </div>
+        )
+      ) : (
+        <SourceView path={sourcePath} content={sourceContent} truncated={service.source?.truncated} />
+      )}
+
+      {error && (
+        <div style={{
+          marginTop: 6, fontSize: 11.5, color: STATUS.error.ink,
+          fontFamily: '"JetBrains Mono", monospace',
+        }}>⚠ {error}</div>
+      )}
+    </div>
+  );
+}
+
+function SourceView({ path, content, truncated }) {
+  if (!content) {
+    return (
+      <div style={{
+        background: '#fff', border: `1px dashed ${rule}`, borderRadius: 6,
+        padding: '12px 16px', fontSize: 12.5, color: muted, fontStyle: 'italic',
+      }}>No source captured for this service.</div>
+    );
+  }
+  const lines = content.split('\n');
+  const html = lines.map((line, i) =>
+    '<span class="ln">' + (i + 1) + '</span>' + escHtml(line)
+  ).join('\n');
+  return (
+    <div>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 6, fontSize: 11, color: muted,
+      }}>
+        <code style={{
+          fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+          background: subtle, border: `1px solid ${rule}`, borderRadius: 3,
+          padding: '1px 6px', color: ink,
+        }}>{path}</code>
+        {truncated && (
+          <span style={{
+            fontSize: 10.5, color: STATUS.missing.ink, fontWeight: 600,
+            padding: '2px 8px', background: 'oklch(0.96 0.05 75)',
+            border: `1px solid color-mix(in oklch, ${STATUS.missing.dot} 30%, ${rule})`,
+            borderRadius: 3,
+          }}>truncated</span>
+        )}
+      </div>
+      <pre className="source-pre" dangerouslySetInnerHTML={{ __html: html }} />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Row + expanded detail
+// ─────────────────────────────────────────────────────────────────────────────
+function Row({ s, expanded, onToggle }) {
+  const m = STATUS[s.status] || STATUS.loaded;
+  const errs = (s.stderr_errors || []).length;
+  const spark = synthSpark(s, 24);
+  const desc = friendlyDescription(s);
+  const cellTop = `1px solid ${rule}`;
+  return (
+    <>
+      <tr
+        onClick={onToggle}
+        style={{
+          cursor: 'pointer',
+          background: expanded ? subtle : 'transparent',
+          transition: 'background .1s',
+        }}
+        onMouseEnter={e => { if (!expanded) e.currentTarget.style.background = 'oklch(0.985 0.005 90)'; }}
+        onMouseLeave={e => { if (!expanded) e.currentTarget.style.background = 'transparent'; }}
+      >
+        <td style={{ padding: '12px 10px 12px 14px', borderTop: cellTop, width: 22, verticalAlign: 'top' }}>
+          <span style={{ color: muted, fontSize: 11, fontFamily: '"JetBrains Mono", monospace' }}>
+            {expanded ? '▾' : '▸'}
+          </span>
+        </td>
+        <td style={{ padding: '12px 14px 12px 0', borderTop: cellTop, verticalAlign: 'top', minWidth: 280 }}>
+          {desc ? (
+            <div style={{
+              fontSize: 14, fontWeight: 500, color: ink,
+              letterSpacing: '-0.005em', lineHeight: 1.4, maxWidth: 540,
+            }}>{desc}</div>
+          ) : (
+            <div style={{ fontSize: 13, color: muted, fontStyle: 'italic' }}>No description.</div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+            <div style={{
+              fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+              color: 'oklch(0.42 0.01 280)', fontWeight: 500,
+            }}>{shortName(s)}</div>
+            <div style={{
+              fontFamily: '"JetBrains Mono", monospace', fontSize: 10.5, color: muted,
+            }}>· {s.namespace}</div>
+          </div>
+        </td>
+        <td style={{ padding: '12px 14px', borderTop: cellTop, verticalAlign: 'top' }}>
+          <StatusDot status={s.status} />
+        </td>
+        <td style={{ padding: '12px 14px', borderTop: cellTop, fontSize: 12, color: ink, whiteSpace: 'nowrap', verticalAlign: 'top', fontFamily: '"JetBrains Mono", monospace' }}>
+          {s.schedule?.summary || '—'}
+        </td>
+        <td style={{ padding: '12px 14px', borderTop: cellTop, verticalAlign: 'top' }}>
+          <Spark data={spark} color={m.dot} />
+        </td>
+        <td style={{ padding: '12px 14px', borderTop: cellTop, fontSize: 12, color: ink, whiteSpace: 'nowrap', verticalAlign: 'top', fontFeatureSettings: '"tnum"' }}>
+          {timeAgo(s.last_activity)}
+        </td>
+        <td style={{ padding: '12px 14px', borderTop: cellTop, fontSize: 11.5, fontFamily: '"JetBrains Mono", monospace', color: muted, whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+          {s.last_exit_code == null ? '—' : `exit ${s.last_exit_code}`}
+          {errs > 0 && (
+            <span style={{ marginLeft: 8, color: STATUS.error.ink, fontWeight: 600 }}>⚠ {errs}</span>
+          )}
+        </td>
+      </tr>
+      {expanded && (
+        <tr style={{ background: subtle }}>
+          <td colSpan={7} style={{ padding: '4px 14px 22px 46px', borderTop: 'none' }}>
+            <HowItWorks service={s} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 14 }}>
+              <div>
+                <div style={sectionLabelStyle}>Command</div>
+                <div style={{
+                  fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+                  color: ink, lineHeight: 1.5,
+                  background: '#fff', border: `1px solid ${rule}`,
+                  borderRadius: 6, padding: '8px 10px', wordBreak: 'break-all',
+                }}>{(s.program_args || []).join(' ')}</div>
+                <div style={{ ...sectionLabelStyle, marginTop: 14 }}>Plist · pid</div>
+                <div style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: muted, wordBreak: 'break-all' }}>
+                  {s.plist_path}{s.pid ? ` · pid ${s.pid}` : ''}
+                </div>
+              </div>
+              <div>
+                {(s.stderr_errors || []).length > 0 ? (
+                  <>
+                    <div style={{ ...sectionLabelStyle, color: STATUS.error.ink }}>⚠ stderr</div>
+                    <pre style={{
+                      margin: 0, padding: '8px 10px',
+                      background: 'oklch(0.97 0.04 25)',
+                      border: `1px solid color-mix(in oklch, ${STATUS.error.dot} 28%, ${rule})`,
+                      borderRadius: 6,
+                      fontFamily: '"JetBrains Mono", monospace',
+                      fontSize: 11, color: STATUS.error.ink, lineHeight: 1.5,
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                      maxHeight: 110, overflow: 'auto',
+                    }}>{(s.stderr_errors || []).slice(-2).join('\n')}</pre>
+                  </>
+                ) : (
+                  <>
+                    <div style={sectionLabelStyle}>stdout · tail</div>
+                    <pre style={{
+                      margin: 0, padding: '8px 10px',
+                      background: '#fff', border: `1px solid ${rule}`,
+                      borderRadius: 6,
+                      fontFamily: '"JetBrains Mono", monospace',
+                      fontSize: 11, color: ink, lineHeight: 1.5,
+                      whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                      maxHeight: 110, overflow: 'auto',
+                    }}>{lastLines(s.stdout_tail, 4) || '(no output)'}</pre>
+                  </>
+                )}
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function StatBlock({ label, value, color }) {
+  return (
+    <div style={{ paddingRight: 24, borderRight: `1px solid ${rule}` }}>
+      <div style={{
+        fontFamily: '"JetBrains Mono", monospace', fontSize: 9.5,
+        letterSpacing: '0.18em', textTransform: 'uppercase', color: muted,
+      }}>{label}</div>
+      <div style={{
+        marginTop: 3, fontSize: 26, fontWeight: 500, letterSpacing: '-0.02em',
+        color: color || ink, fontFeatureSettings: '"tnum"',
+      }}>{value}</div>
+    </div>
+  );
+}
+
+function CategoryHeader({ cat, items }) {
+  const c = counts(items);
+  return (
+    <div style={{
+      padding: '20px 28px 12px',
+      background: 'linear-gradient(180deg, oklch(0.975 0.012 285) 0%, transparent 100%)',
+      borderTop: `1px solid ${rule}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+          <span style={{
+            fontFamily: '"JetBrains Mono", monospace', fontSize: 16,
+            color: accent, lineHeight: 1,
+          }}>{cat.icon}</span>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600, color: ink, letterSpacing: '-0.01em' }}>{cat.title}</h2>
+          <span style={{
+            fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: muted,
+            padding: '2px 8px', background: '#fff', border: `1px solid ${rule}`, borderRadius: 99,
+          }}>{items.length}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11.5, color: muted, fontFeatureSettings: '"tnum"' }}>
+          {c.running > 0 && <span style={{ color: STATUS.running.ink }}><b style={{ fontWeight: 600 }}>{c.running}</b> running</span>}
+          {c.scheduled > 0 && <span style={{ color: STATUS.scheduled.ink }}><b style={{ fontWeight: 600 }}>{c.scheduled}</b> scheduled</span>}
+          {c.error > 0 && <span style={{ color: STATUS.error.ink, fontWeight: 600 }}>⚠ {c.error} error{c.error > 1 ? 's' : ''}</span>}
+          {c.disabled > 0 && <span><b style={{ fontWeight: 600, color: ink }}>{c.disabled}</b> disabled</span>}
+        </div>
+      </div>
+      <div style={{ marginTop: 4, fontSize: 12.5, color: muted, maxWidth: 760, lineHeight: 1.4 }}>
+        {cat.blurb}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Top-level dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+function Dashboard() {
+  const allServices = (D?.services || []);
+  const personalCount = useMemo(() => allServices.filter(s => s.is_personal).length, []);
+  const totalCount = allServices.length;
+
+  const [scope, setScope] = useState('personal');
+  const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
+  const [expanded, setExpanded] = useState(null);
+
+  const services = useMemo(() => {
+    return scope === 'personal' ? allServices.filter(s => s.is_personal) : allServices;
+  }, [scope]);
+  const c = useMemo(() => counts(services), [services]);
+
+  const visibleByCategory = useMemo(() => {
+    let arr = services.slice();
+    if (filter !== 'all') arr = arr.filter(s => s.status === filter);
+    if (query) {
+      const q = query.toLowerCase();
+      arr = arr.filter(s => {
+        const desc = friendlyDescription(s) || '';
+        return `${s.label} ${s.name} ${desc}`.toLowerCase().includes(q);
+      });
+    }
+    const order = { error: 0, running: 1, scheduled: 2, loaded: 3, disabled: 4, missing: 5 };
+    arr.sort((a, b) => {
+      const sa = order[a.status] ?? 9, sb = order[b.status] ?? 9;
+      if (sa !== sb) return sa - sb;
+      return shortName(a).localeCompare(shortName(b));
+    });
+    return groupByCategory(arr);
+  }, [services, filter, query]);
+
+  return (
+    <div style={{ width: '100%', minHeight: '100vh', background: paper, color: ink, fontFamily: '"Inter Tight", system-ui, sans-serif' }}>
+      {/* Header */}
+      <div style={{ padding: '20px 28px', borderBottom: `1px solid ${rule}`, background: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
+            <div style={{
+              fontFamily: '"JetBrains Mono", monospace', fontSize: 10.5,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              color: accent, fontWeight: 600,
+            }}>console</div>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, letterSpacing: '-0.01em' }}>{D?.host}</h1>
+            <span style={{ fontSize: 12, color: muted, fontFamily: '"JetBrains Mono", monospace' }}>
+              {D?.user} · {timeAgo(D?.generated_at)}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <ScopeToggle scope={scope} setScope={setScope} personalCount={personalCount} totalCount={totalCount} />
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 6px 6px 12px',
+              background: subtle, border: `1px solid ${rule}`, borderRadius: 6,
+            }}>
+              <span style={{ color: muted, fontSize: 13 }}>⌕</span>
+              <input
+                value={query} onChange={e => setQuery(e.target.value)}
+                placeholder="filter by name or description…"
+                style={{
+                  border: 'none', outline: 'none', background: 'transparent',
+                  font: 'inherit', fontSize: 12.5, width: 240, color: ink,
+                  fontFamily: '"JetBrains Mono", monospace',
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        <div style={{
+          marginTop: 18,
+          display: 'grid', gridTemplateColumns: 'auto auto auto auto auto 1fr',
+          alignItems: 'flex-end', gap: 24,
+        }}>
+          <StatBlock label="Total" value={c.total} />
+          <StatBlock label="Running" value={c.running || 0} color={STATUS.running.ink} />
+          <StatBlock label="Scheduled" value={c.scheduled || 0} color={STATUS.scheduled.ink} />
+          <StatBlock label="Errors" value={c.error || 0} color={c.error ? STATUS.error.ink : ink} />
+          <StatBlock label="Disabled" value={c.disabled || 0} color={muted} />
+          <div style={{ paddingLeft: 8 }}>
+            <div style={{ ...sectionLabelStyle, marginBottom: 8 }}>Activity · last 24h</div>
+            <Heatmap services={services} />
+          </div>
+        </div>
+      </div>
+
+      {/* Filter chips */}
+      <div style={{
+        padding: '12px 28px', borderBottom: `1px solid ${rule}`,
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+        background: '#fff',
+      }}>
+        <Chip active={filter === 'all'}       label="All"       count={c.total}            onClick={() => setFilter('all')} />
+        <Chip active={filter === 'running'}   label="Running"   count={c.running || 0}     onClick={() => setFilter('running')}   color={STATUS.running.dot} />
+        <Chip active={filter === 'scheduled'} label="Scheduled" count={c.scheduled || 0}   onClick={() => setFilter('scheduled')} color={STATUS.scheduled.dot} />
+        <Chip active={filter === 'error'}     label="Errors"    count={c.error || 0}       onClick={() => setFilter('error')}     color={STATUS.error.dot} />
+        <Chip active={filter === 'disabled'}  label="Disabled"  count={c.disabled || 0}    onClick={() => setFilter('disabled')}  color={STATUS.disabled.dot} />
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 11, color: muted, fontFamily: '"JetBrains Mono", monospace' }}>
+          grouped by purpose
+        </span>
+      </div>
+
+      {/* Grouped tables */}
+      <div style={{ paddingBottom: 60 }}>
+        {visibleByCategory.map(cat => (
+          <section key={cat.id}>
+            <CategoryHeader cat={cat} items={cat.items} />
+            <div style={{ padding: '0 28px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <colgroup>
+                  <col style={{ width: 22 }} />
+                  <col />
+                  <col style={{ width: 110 }} />
+                  <col style={{ width: 160 }} />
+                  <col style={{ width: 110 }} />
+                  <col style={{ width: 100 }} />
+                  <col style={{ width: 110 }} />
+                </colgroup>
+                <tbody>
+                  {cat.items.map(s => (
+                    <Row
+                      key={s.label} s={s}
+                      expanded={expanded === s.label}
+                      onToggle={() => setExpanded(expanded === s.label ? null : s.label)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ))}
+        {visibleByCategory.length === 0 && (
+          <div style={{ padding: '60px 0', textAlign: 'center', color: muted }}>
+            No services match.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Dashboard />);
+</script>
+</body>
+</html>
