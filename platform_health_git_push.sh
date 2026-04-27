@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Hourly git push — backs up all critical repos and system config snapshots.
+# Hourly git push — backs up critical repos plus restorable machine-state snapshots.
 # Repos covered:
-#   ~/.openclaw           → JustinTSmith/openclaw-config      (agents, config, watchdog)
-#   ~/.openclaw/workspace → JustinTSmith/openclaw-workspace   (operator memory, state)
-#   ~/Workspace/scripts   → JustinTSmith/personal-scripts     (automation scripts)
-# Snapshots (written into ~/.openclaw/system-config/, committed with openclaw repo):
-#   crontab               → system-config/crontab.txt
-#   LaunchAgents          → system-config/LaunchAgents/
-#   personal skills       → system-config/claude-skills/
+#   ~/.openclaw           → JustinTSmith/openclaw-config    (legacy root snapshot)
+#   ~/.openclaw/workspace → JustinTSmith/openclaw-config    (workspace + system-state snapshots)
+#   ~/Workspace/scripts   → JustinTSmith/personal-scripts   (automation scripts)
+#
+# Preferred snapshot source of truth:
+#   ~/.openclaw/workspace/scripts/export-system-state.sh
+#     → ~/.openclaw/workspace/snapshots/system-state/
+#
+# Legacy compatibility snapshot (still written for ~/.openclaw repo):
+#   ~/.openclaw/system-config/
 #
 # Called by cron — exits 0 always (non-fatal design).
 
@@ -36,6 +39,20 @@ snapshot_system_config() {
     done
 
     log "System config snapshot updated"
+}
+
+run_workspace_export() {
+    local exporter="$HOME/.openclaw/workspace/scripts/export-system-state.sh"
+
+    if [ -x "$exporter" ]; then
+        if "$exporter" >>"$LOG" 2>&1; then
+            log "Workspace system-state export updated"
+        else
+            log "WARN workspace system-state export failed (check $LOG)"
+        fi
+    else
+        log "SKIP workspace export — $exporter is missing or not executable"
+    fi
 }
 
 # ── Push a git repo ───────────────────────────────────────────────────────────
@@ -72,11 +89,14 @@ push_repo() {
 # ── Main ──────────────────────────────────────────────────────────────────────
 log "=== git push run start ==="
 
-# Snapshot crontab, LaunchAgents, and personal skills before committing openclaw
+# Preferred workspace snapshot for restoreability
+run_workspace_export
+
+# Legacy root-level snapshot for compatibility with existing ~/.openclaw repo flow
 snapshot_system_config
 
-push_repo "$HOME/.openclaw"              "openclaw-config"
 push_repo "$HOME/.openclaw/workspace"    "openclaw-workspace"
 push_repo "$HOME/Workspace/scripts"      "personal-scripts"
+push_repo "$HOME/.openclaw"              "openclaw-config"
 
 log "=== git push run done ==="
