@@ -19,6 +19,7 @@ __pycache__/
 logs/
 output/
 audio_cache/
+services-dashboard/dashboard.html
 
 # Cron run history (runtime state, not config)
 cron/runs/

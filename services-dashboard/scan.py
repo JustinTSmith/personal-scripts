@@ -199,6 +199,23 @@ def status_for(state: dict[str, Any] | None, schedule: dict[str, Any], disabled:
     return "loaded"
 
 
+def sanitize_environment(env: dict[str, Any]) -> dict[str, str]:
+    secret_key_markers = (
+        "KEY", "TOKEN", "SECRET", "PASSWORD", "PASS", "AUTH", "PRIVATE",
+        "SESSION", "COOKIE", "CREDENTIAL", "API_",
+    )
+    redacted: dict[str, str] = {}
+    for key, value in (env or {}).items():
+        key_str = str(key)
+        value_str = str(value)
+        upper_key = key_str.upper()
+        if any(marker in upper_key for marker in secret_key_markers):
+            redacted[key_str] = "[redacted]"
+        else:
+            redacted[key_str] = value_str
+    return redacted
+
+
 # Patterns that indicate a genuine error (vs. routine stderr logging).
 # Matched against the stderr tail. We use leading-anchor on most so that
 # strings like "no errors" don't trigger.
@@ -964,7 +981,7 @@ def scan() -> dict[str, Any]:
             "stdout_meta": stdout_meta,
             "stderr_meta": stderr_meta,
             "last_activity": activity,
-            "environment": plist.get("EnvironmentVariables") or {},
+            "environment": sanitize_environment(plist.get("EnvironmentVariables") or {}),
             "entry_script": str(entry_script) if entry_script else None,
             "description": description,
             "channels": channels,
