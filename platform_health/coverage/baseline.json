@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-26T04:00:00.835004",
+  "generated_at": "2026-04-27T04:00:00.826712",
   "agents": {
     "total": 1,
     "required": 4,
@@ -7,8 +7,8 @@
     "pct": 0.0
   },
   "skills": {
-    "total": 44,
-    "with_skill_md": 44,
+    "total": 45,
+    "with_skill_md": 45,
     "pct": 100.0
   },
   "crons": {
