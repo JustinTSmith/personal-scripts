@@ -1,7 +1,7 @@
 # Scripts Manifest
 > Auto-maintained master list of all scripts in this directory.
 > Run `python3 _generate_manifest.py` to regenerate from current state.
-> Last updated: 2026-04-26
+> Last updated: 2026-04-27
 
 ---
 
@@ -58,6 +58,7 @@
 | `qwen-voice/` | A push-to-talk voice assistant that runs entirely on local models. Hold Space to talk, release to get a spoken response. | `python3 voice_loop.py` |
 | `qwen3-tts/` | A local text-to-speech server that implements the OpenAI-compatible `/v1/audio/speech` API endpoint. Uses Qwen3-TTS with | `python3 server.py` |
 | `security_council/` | — | `python3 main.py` |
+| `services-dashboard/` | — | `—` |
 | `voice-finetune/` | A pipeline for fine-tuning a custom voice model from reference audio. Produces a voice clone usable in the Qwen3-TTS ser | `—` |
 | `weekly-briefing/` | — | `—` |
 | `yt-dlp/` | <!-- MANPAGE: BEGIN EXCLUDED SECTION --> | `—` |
