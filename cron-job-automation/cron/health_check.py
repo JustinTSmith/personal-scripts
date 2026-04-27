@@ -13,6 +13,7 @@ CLI:
   python3 health_check.py [--quiet] [--jobs JOB1,JOB2]
 """
 import argparse
+import json
 import os
 import sys
 import time
@@ -30,6 +31,9 @@ STALE_MAX_AGE_HOURS = 2.0
 FAILURE_WINDOW_HOURS = 6.0
 FAILURE_THRESHOLD = 3
 RECENT_WINDOW_HOURS = 24.0
+OPENCLAW_HOME = os.environ.get("OPENCLAW_HOME", os.path.expanduser("~/.openclaw"))
+JOBS_FILE = os.path.join(OPENCLAW_HOME, "cron", "jobs.json")
+REQUIRED_JOBS_FILE = os.path.join(OPENCLAW_HOME, "cron", "required_jobs.json")
 
 
 def _icon(status: str) -> str:
@@ -38,8 +42,59 @@ def _icon(status: str) -> str:
     )
 
 
+def check_required_jobs(now: float) -> list[str]:
+    """Alert on any required jobs missing from jobs.json or silent past their threshold."""
+    if not os.path.exists(REQUIRED_JOBS_FILE):
+        return []
+
+    try:
+        required = json.load(open(REQUIRED_JOBS_FILE)).get("required", [])
+    except Exception as e:
+        alert.send(f"⚠️ Could not read required_jobs.json: {e}")
+        return []
+
+    try:
+        active_ids = {j["id"] for j in json.load(open(JOBS_FILE)).get("jobs", [])}
+    except Exception as e:
+        alert.send(f"🚨 Could not read cron/jobs.json: {e}")
+        return [r["id"] for r in required]
+
+    problems = []
+    for req in required:
+        job_id = req["id"]
+        job_name = req["name"]
+        desc = req.get("description", job_name)
+
+        if job_id not in active_ids:
+            msg = f"🚨 *Required job missing from jobs.json*\n`{job_name}` ({job_id})\n_{desc}_"
+            alert.send(msg)
+            problems.append(job_name)
+            continue
+
+        max_silence_h = req.get("maxSilenceHours")
+        if max_silence_h:
+            runs = cron_log.query(job_name=job_name, limit=1)
+            if not runs:
+                last_run_age_h = float("inf")
+            else:
+                last_run_age_h = (now - runs[0]["started_at"]) / 3600
+            if last_run_age_h > max_silence_h:
+                age_str = f"{last_run_age_h:.0f}h" if last_run_age_h != float("inf") else "never"
+                msg = (
+                    f"⏰ *Required job overdue*\n`{job_name}` — last ran {age_str} ago "
+                    f"(threshold {max_silence_h}h)\n_{desc}_"
+                )
+                alert.send(msg)
+                problems.append(job_name)
+
+    return problems
+
+
 def run(quiet: bool = False, filter_jobs: list[str] | None = None) -> dict:
     now = time.time()
+
+    # 0. Enforce required-jobs manifest before anything else
+    missing_or_overdue = check_required_jobs(now)
 
     # 1. Clean up stale jobs first
     stale_count = cron_log.cleanup_stale(STALE_MAX_AGE_HOURS)
@@ -115,8 +170,8 @@ def run(quiet: bool = False, filter_jobs: list[str] | None = None) -> dict:
     # 6. Sync to Nerve
     nerve_bridge.sync(limit=100)
 
-    result = {"jobs": job_results, "stale_cleaned": stale_count, "persistent_failures": persistent_failures}
-    print(f"[health_check] {len(job_results)} jobs checked, {len(persistent_failures)} persistent failures, {stale_count} stale cleaned")
+    result = {"jobs": job_results, "stale_cleaned": stale_count, "persistent_failures": persistent_failures, "missing_or_overdue": missing_or_overdue}
+    print(f"[health_check] {len(job_results)} jobs checked, {len(persistent_failures)} persistent failures, {stale_count} stale cleaned, {len(missing_or_overdue)} required jobs missing/overdue")
     return result
 
 

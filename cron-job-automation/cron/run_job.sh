@@ -116,11 +116,34 @@ trap '_cleanup 130 SIGINT;  exit 130' INT
 trap '_cleanup 143 SIGTERM; exit 143' TERM
 trap '_cleanup 129 SIGHUP;  exit 129' HUP
 
+# ── Pure-bash timeout (replaces GNU coreutils timeout, not available on macOS)
+# Runs command in background with a watchdog subshell; returns 124 on timeout
+# to match the exit code that _cleanup already expects.
+_bash_timeout() {
+    local secs="$1"; shift
+    local _fired
+    _fired=$(mktemp)
+
+    "$@" &
+    local _child=$!
+    ( sleep "$secs" && kill "$_child" 2>/dev/null && echo 1 > "$_fired" ) &
+    local _watchdog=$!
+
+    wait "$_child" 2>/dev/null; local _rc=$?
+    kill "$_watchdog" 2>/dev/null
+    wait "$_watchdog" 2>/dev/null
+
+    if [[ "$(cat "$_fired" 2>/dev/null)" == "1" ]]; then
+        rm -f "$_fired"; return 124
+    fi
+    rm -f "$_fired"; return "$_rc"
+}
+
 # ── Execute ──────────────────────────────────────────────────────────────────
 EXIT_CODE=0
 
 if [[ -n "$TIMEOUT_SECS" ]]; then
-    timeout "$TIMEOUT_SECS" "${CMD_ARGS[@]}" || EXIT_CODE=$?
+    _bash_timeout "$TIMEOUT_SECS" "${CMD_ARGS[@]}" || EXIT_CODE=$?
 else
     "${CMD_ARGS[@]}" || EXIT_CODE=$?
 fi
