@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-04-27T04:00:00.826712",
+  "generated_at": "2026-04-27T11:28:51.533688",
   "agents": {
-    "total": 1,
+    "total": 2,
     "required": 4,
-    "with_system": 0,
-    "pct": 0.0
+    "with_system": 1,
+    "pct": 25.0
   },
   "skills": {
     "total": 45,
